@@ -78,13 +78,11 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
     let cart: THREE.Mesh | null = null;
     let forceArrow: THREE.ArrowHelper | null = null;
     let bulb: THREE.Mesh | null = null;
-    let protein: THREE.Mesh | null = null;
-    let earth: THREE.Mesh | null = null;
-    let earthAxis: THREE.Mesh | null = null;
     const animated: THREE.Object3D[] = [];
     const massBlocks: THREE.Mesh[] = [];
-    const bubbles: THREE.Mesh[] = [];
-    const dnaBases: { left: THREE.Mesh; right: THREE.Mesh; index: number }[] = [];
+    const matterParticles: THREE.Mesh[] = [];
+    const cellParts: THREE.Object3D[] = [];
+    const earthLayers: THREE.Mesh[] = [];
 
     if (moduleId === "motion") {
       mesh(new THREE.BoxGeometry(5.8, 0.08, 1.2), 0x7c8ba3, 0, -0.42);
@@ -107,45 +105,56 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
         animated.push(electron);
       }
     } else if (moduleId === "materials") {
-      const vessel = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.65, 1.8, 32, 1, true), new THREE.MeshStandardMaterial({ color: 0xa9ddff, transparent: true, opacity: 0.42, side: THREE.DoubleSide }));
-      vessel.position.y = 0.1;
-      modelRoot.add(vessel);
-      mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.65, 32), 0x36a6d9, 0, -0.3);
-      for (let index = 0; index < 20; index += 1) {
-        const bubble = mesh(new THREE.SphereGeometry(0.07 + (index % 3) * 0.02, 10, 8), 0xffffff, ((index * 37) % 10 - 5) / 10, -0.2 + (index % 7) * 0.2);
-        bubble.userData.offset = index * 0.37;
-        bubbles.push(bubble);
-        animated.push(bubble);
+      const container = new THREE.Mesh(
+        new THREE.BoxGeometry(2.5, 2.5, 2.5),
+        new THREE.MeshBasicMaterial({ color: 0x7c8ba3, wireframe: true, transparent: true, opacity: 0.55 }),
+      );
+      modelRoot.add(container);
+      for (let index = 0; index < 30; index += 1) {
+        const particle = mesh(new THREE.SphereGeometry(0.13, 12, 8), 0x1676c2, 0, 0);
+        particle.userData.phase = index * 1.73;
+        matterParticles.push(particle);
       }
     } else if (moduleId === "life") {
-      const output = (controlB / 5) * Math.max(0, 1 - controlA * 0.15);
-      for (let index = 0; index < 12; index += 1) {
-        const angle = index * 0.72;
-        const y = -1.5 + index * 0.27;
-        const changed = index < controlA;
-        const left = mesh(new THREE.SphereGeometry(0.13, 12, 8), changed ? 0xd71920 : 0x1368ce, Math.cos(angle) * 0.55, y, Math.sin(angle) * 0.55);
-        const right = mesh(new THREE.SphereGeometry(0.13, 12, 8), changed ? 0xf7c600 : 0x35a873, -Math.cos(angle) * 0.55, y, -Math.sin(angle) * 0.55);
-        dnaBases.push({ left, right, index });
-      }
-      protein = mesh(new THREE.TorusKnotGeometry(0.55, 0.15, 64, 10), 0x7c3aed, 1.65, 0);
-      protein.scale.setScalar(0.45 + output);
-      animated.push(protein);
+      const membrane = new THREE.Mesh(new THREE.SphereGeometry(1.55, 32, 20), new THREE.MeshStandardMaterial({ color: 0x62c98d, transparent: true, opacity: 0.28, side: THREE.DoubleSide }));
+      membrane.scale.set(1.25, 0.78, 0.9);
+      modelRoot.add(membrane);
+      cellParts[4] = membrane;
+      cellParts[1] = mesh(new THREE.SphereGeometry(0.48, 24, 16), 0x7c3aed, -0.38, 0.15, 0.25);
+      const mitochondria = new THREE.Group();
+      [-0.8, 0.72].forEach((x, index) => {
+        const part = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 0.48, 6, 12), material(0xd95d39));
+        part.position.set(x, index ? -0.42 : 0.48, -0.15);
+        part.rotation.z = Math.PI / 2;
+        mitochondria.add(part);
+      });
+      modelRoot.add(mitochondria);
+      cellParts[2] = mitochondria;
+      const chloroplasts = new THREE.Group();
+      [-0.72, 0.62].forEach((x, index) => {
+        const part = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.42, 6, 12), material(0x178447));
+        part.position.set(x, index ? 0.62 : -0.55, 0.28);
+        part.rotation.z = Math.PI / 2;
+        chloroplasts.add(part);
+      });
+      modelRoot.add(chloroplasts);
+      cellParts[3] = chloroplasts;
+      const vacuole = new THREE.Mesh(new THREE.SphereGeometry(0.72, 24, 16), new THREE.MeshStandardMaterial({ color: 0x66c7e8, transparent: true, opacity: 0.4 }));
+      vacuole.position.set(0.45, 0, -0.18);
+      vacuole.scale.y = 0.72;
+      modelRoot.add(vacuole);
     } else {
-      const sun = mesh(new THREE.SphereGeometry(0.58, 24, 16), 0xf7c600, -1.9, 0);
-      (sun.material as THREE.MeshStandardMaterial).emissive.setHex(0xff8c00);
-      (sun.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.5;
-      const orbit = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.025, 8, 64), material(0x7c8ba3));
-      orbit.rotation.x = Math.PI / 2;
-      orbit.position.x = -0.1;
-      modelRoot.add(orbit);
-      const orbitAngle = (controlB * Math.PI) / 6;
-      earth = mesh(new THREE.SphereGeometry(0.48, 24, 16), 0x1676c2, -0.1 + Math.cos(orbitAngle) * 1.8, 0, Math.sin(orbitAngle) * 1.8);
-      earth.rotation.z = THREE.MathUtils.degToRad(controlA);
-      earthAxis = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.35, 8), material(0xffffff));
-      earthAxis.rotation.z = earth.rotation.z;
-      earthAxis.position.copy(earth.position);
-      modelRoot.add(earthAxis);
-      animated.push(earth);
+      const radii = [1.5, 1.25, 0.82, 0.46];
+      const colors = [0x356f3d, 0xe47b32, 0xf0b429, 0xd71920];
+      radii.forEach((radius, index) => {
+        const layer = new THREE.Mesh(
+          new THREE.SphereGeometry(radius, 32, 20, 0, Math.PI),
+          new THREE.MeshStandardMaterial({ color: colors[index], roughness: 0.65, side: THREE.DoubleSide }),
+        );
+        layer.rotation.y = -Math.PI / 2;
+        modelRoot.add(layer);
+        earthLayers.push(layer);
+      });
     }
 
     let frame = 0;
@@ -174,24 +183,40 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
           item.position.set(Math.cos(angle) * 1.8, 0, Math.sin(angle) * 1.8);
         });
       } else if (moduleId === "materials") {
-        bubbles.forEach((bubble, index) => { bubble.visible = index < Math.min(current.controlA, current.controlB) * 4; });
-        animated.forEach((item) => { item.position.y = -0.4 + ((frame * 1.8 + item.userData.offset) % 1.7); });
-      } else if (moduleId === "life") {
-        dnaBases.forEach(({ left, right, index }) => {
-          (left.material as THREE.MeshStandardMaterial).color.setHex(index < current.controlA ? 0xd71920 : 0x1368ce);
-          (right.material as THREE.MeshStandardMaterial).color.setHex(index < current.controlA ? 0xf7c600 : 0x35a873);
+        const state = current.controlA <= 0 ? "solid" : current.controlA < 100 ? "liquid" : "gas";
+        matterParticles.forEach((particle, index) => {
+          particle.visible = index < current.controlB;
+          const phase = particle.userData.phase as number;
+          if (state === "solid") {
+            const x = ((index % 5) - 2) * 0.38;
+            const y = (Math.floor(index / 5) % 3) * 0.38 - 0.82;
+            const z = (Math.floor(index / 15) - 0.5) * 0.38;
+            particle.position.set(x + Math.sin(frame * 7 + phase) * 0.018, y, z);
+          } else if (state === "liquid") {
+            particle.position.set(
+              Math.sin(frame * 1.8 + phase) * 0.92,
+              -0.65 + ((index * 0.23 + frame * 0.35) % 1.25),
+              Math.cos(frame * 1.45 + phase * 1.3) * 0.85,
+            );
+          } else {
+            particle.position.set(
+              Math.sin(frame * 3.8 + phase) * 1.02,
+              Math.sin(frame * 3.1 + phase * 1.7) * 1.02,
+              Math.cos(frame * 3.5 + phase * 1.2) * 1.02,
+            );
+          }
         });
-        protein?.scale.setScalar(0.45 + (current.controlB / 5) * Math.max(0, 1 - current.controlA * 0.15));
-        animated.forEach((item) => { item.rotation.y += 0.012; item.rotation.x += 0.006; });
+      } else if (moduleId === "life") {
+        cellParts.forEach((part, index) => { if (part) part.visible = current.controlA !== index; });
+        modelRoot.rotation.y = current.controlB * (Math.PI / 2) + Math.sin(frame * 0.4) * 0.08;
       } else if (moduleId === "earth-space") {
-        const orbitPosition = (current.controlB * Math.PI) / 6;
-        if (earth && earthAxis) {
-          earth.position.set(-0.1 + Math.cos(orbitPosition) * 1.8, 0, Math.sin(orbitPosition) * 1.8);
-          earth.rotation.z = THREE.MathUtils.degToRad(current.controlA);
-          earthAxis.position.copy(earth.position);
-          earthAxis.rotation.z = earth.rotation.z;
-        }
-        animated.forEach((item) => { item.rotation.y += 0.01; });
+        earthLayers.forEach((layer, index) => {
+          layer.position.x = index * current.controlA * 0.72;
+          const layerMaterial = layer.material as THREE.MeshStandardMaterial;
+          layerMaterial.emissive.setHex(index === current.controlB ? 0x333333 : 0x000000);
+          layerMaterial.emissiveIntensity = index === current.controlB ? 0.8 : 0;
+        });
+        modelRoot.rotation.y = -0.35 + Math.sin(frame * 0.35) * 0.06;
       }
       if (viewMode === "ar" && arSource?.ready && arContext) {
         arContext.update(arSource.domElement);

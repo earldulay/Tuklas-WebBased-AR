@@ -1,4 +1,4 @@
-const CACHE_NAME = "tuklas-webar-v7";
+const CACHE_NAME = "tuklas-webar-v8";
 const ASSETS = [
   "/",
   "/index.html",

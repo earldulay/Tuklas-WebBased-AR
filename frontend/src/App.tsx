@@ -42,6 +42,9 @@ interface ExperimentTrial {
   values: string[];
 }
 
+const organelleNames = ["None", "Nucleus", "Mitochondria", "Chloroplast", "Cell membrane"];
+const earthLayerNames = ["Crust", "Mantle", "Outer core", "Inner core"];
+
 function getObservationModel(moduleId: string, controlA: number, controlB: number): ObservationModel {
   if (moduleId === "electricity") {
     const current = controlA / controlB;
@@ -59,53 +62,52 @@ function getObservationModel(moduleId: string, controlA: number, controlB: numbe
   }
 
   if (moduleId === "materials") {
-    const gas = Math.min(controlA, controlB) * 25;
-    const leftover = controlA === controlB ? "None" : controlA > controlB ? "Reactant A" : "Reactant B";
+    const state = controlA <= 0 ? "Solid" : controlA < 100 ? "Liquid" : "Gas";
+    const arrangement = state === "Solid" ? "Tightly packed, ordered" : state === "Liquid" ? "Close, able to flow" : "Far apart";
+    const motion = state === "Solid" ? "Vibrating" : state === "Liquid" ? "Sliding" : "Fast and random";
     return {
-      title: "Reactant Ratio Model",
-      controlA: { label: "Reactant A", min: 1, max: 5, step: 1, unit: "scoop" },
-      controlB: { label: "Reactant B", min: 1, max: 5, step: 1, unit: "scoop" },
+      title: "States of Matter Model",
+      controlA: { label: "Temperature", min: -20, max: 120, step: 10, unit: "C" },
+      controlB: { label: "Particles", min: 12, max: 30, step: 6, unit: "" },
       readouts: [
-        { label: "Reactant A", value: `${controlA} scoop` },
-        { label: "Reactant B", value: `${controlB} scoop` },
-        { label: "Gas produced", value: `${gas} mL` },
-        { label: "Left over", value: leftover },
+        { label: "Temperature", value: `${controlA} C` },
+        { label: "State", value: state },
+        { label: "Arrangement", value: arrangement },
+        { label: "Particle motion", value: motion },
       ],
-      recordText: `Reactant A: ${controlA} scoop; Reactant B: ${controlB} scoop; Gas: ${gas} mL; Left over: ${leftover}`,
+      recordText: `Temperature: ${controlA} C; State: ${state}; Arrangement: ${arrangement}; Motion: ${motion}`,
     };
   }
 
   if (moduleId === "life") {
-    const proteinOutput = Math.round((controlB / 5) * Math.max(0, 100 - controlA * 15));
+    const removed = organelleNames[controlA] || organelleNames[0];
+    const functions = ["All major functions available", "Controls cell activities", "Releases usable energy", "Makes food using light", "Controls entry and exit"];
     return {
-      title: "DNA to Protein Model",
-      controlA: { label: "Changed bases", min: 0, max: 5, step: 1, unit: "" },
-      controlB: { label: "Gene activity", min: 1, max: 5, step: 1, unit: "" },
+      title: "Cell Parts Model",
+      controlA: { label: "Removed organelle", min: 0, max: 4, step: 1, unit: "" },
+      controlB: { label: "Model rotation", min: 0, max: 3, step: 1, unit: "turn" },
       readouts: [
-        { label: "Changed bases", value: String(controlA) },
-        { label: "Gene activity", value: `${controlB}/5` },
-        { label: "Functional protein", value: `${proteinOutput}%` },
+        { label: "Removed", value: removed },
+        { label: "Normal function", value: functions[controlA] },
+        { label: "Cell result", value: controlA === 0 ? "Functioning normally" : "Function impaired" },
       ],
-      recordText: `Changed bases: ${controlA}; Gene activity: ${controlB}/5; Functional protein: ${proteinOutput}%`,
+      recordText: `Removed: ${removed}; Normal function: ${functions[controlA]}; Result: ${controlA === 0 ? "Functioning normally" : "Function impaired"}`,
     };
   }
 
   if (moduleId === "earth-space") {
-    const angle = (controlB * Math.PI) / 6;
-    const solarDeclination = controlA * Math.cos(angle);
-    const daylight = 12 + solarDeclination / 7.5;
-    const season = solarDeclination > 8 ? "Northern summer" : solarDeclination < -8 ? "Northern winter" : "Equinox period";
+    const layer = earthLayerNames[controlB] || earthLayerNames[0];
+    const compositions = ["Solid rock", "Hot, slowly flowing rock", "Liquid iron and nickel", "Solid iron and nickel"];
     return {
-      title: "Seasons and Daylight Model",
-      controlA: { label: "Earth tilt", min: 0, max: 45, step: 5, unit: "deg" },
-      controlB: { label: "Orbit position", min: 0, max: 11, step: 1, unit: "month" },
+      title: "Earth Layers Model",
+      controlA: { label: "Layer separation", min: 0, max: 3, step: 1, unit: "" },
+      controlB: { label: "Selected layer", min: 0, max: 3, step: 1, unit: "" },
       readouts: [
-        { label: "Tilt", value: `${controlA} deg` },
-        { label: "Orbit position", value: `${controlB + 1}/12` },
-        { label: "Season", value: season },
-        { label: "Daylight", value: `about ${daylight.toFixed(1)} h` },
+        { label: "Selected layer", value: layer },
+        { label: "Composition", value: compositions[controlB] },
+        { label: "Position", value: `${controlB + 1} of 4, outside to inside` },
       ],
-      recordText: `Earth tilt: ${controlA} deg; Orbit position: ${controlB + 1}/12; Season: ${season}; Daylight: about ${daylight.toFixed(1)} h`,
+      recordText: `Selected layer: ${layer}; Composition: ${compositions[controlB]}; Separation: ${controlA}/3`,
     };
   }
 
@@ -125,10 +127,16 @@ function getObservationModel(moduleId: string, controlA: number, controlB: numbe
 
 function getObservationDefaults(moduleId: string) {
   if (moduleId === "electricity") return { controlA: 6, controlB: 3 };
-  if (moduleId === "materials") return { controlA: 2, controlB: 2 };
-  if (moduleId === "life") return { controlA: 1, controlB: 3 };
-  if (moduleId === "earth-space") return { controlA: 25, controlB: 0 };
+  if (moduleId === "materials") return { controlA: 20, controlB: 24 };
+  if (moduleId === "life") return { controlA: 0, controlB: 0 };
+  if (moduleId === "earth-space") return { controlA: 0, controlB: 0 };
   return { controlA: 2, controlB: 1 };
+}
+
+function formatControlValue(moduleId: string, control: "a" | "b", value: number, unit: string) {
+  if (moduleId === "life" && control === "a") return organelleNames[value];
+  if (moduleId === "earth-space" && control === "b") return earthLayerNames[value];
+  return `${value}${unit ? ` ${unit}` : ""}`;
 }
 
 function ActivityVisual({
@@ -576,9 +584,31 @@ function App() {
               <p className="eyebrow">Observation Prompt</p>
               <p>{activeModule.observe}</p>
               <div className="control-grid">
-                <label><span>{observationModel.controlA.label} <strong>{controlA}{observationModel.controlA.unit ? ` ${observationModel.controlA.unit}` : ""}</strong></span><input type="range" min={observationModel.controlA.min} max={observationModel.controlA.max} step={observationModel.controlA.step} value={controlA} onChange={(event) => setControlA(Number(event.target.value))} /></label>
-                <label><span>{observationModel.controlB.label} <strong>{controlB}{observationModel.controlB.unit ? ` ${observationModel.controlB.unit}` : ""}</strong></span><input type="range" min={observationModel.controlB.min} max={observationModel.controlB.max} step={observationModel.controlB.step} value={controlB} onChange={(event) => setControlB(Number(event.target.value))} /></label>
+                <label><span>{observationModel.controlA.label} <strong>{formatControlValue(activeModule.id, "a", controlA, observationModel.controlA.unit)}</strong></span><input type="range" min={observationModel.controlA.min} max={observationModel.controlA.max} step={observationModel.controlA.step} value={controlA} onChange={(event) => setControlA(Number(event.target.value))} /></label>
+                <label><span>{observationModel.controlB.label} <strong>{formatControlValue(activeModule.id, "b", controlB, observationModel.controlB.unit)}</strong></span><input type="range" min={observationModel.controlB.min} max={observationModel.controlB.max} step={observationModel.controlB.step} value={controlB} onChange={(event) => setControlB(Number(event.target.value))} /></label>
               </div>
+              {activeModule.id === "materials" && (
+                <div className="experiment-presets" aria-label="Temperature presets">
+                  {[[-10, "Cool to solid"], [20, "Warm to liquid"], [110, "Heat to gas"]].map(([value, label]) => (
+                    <button className={controlA === value ? "active" : ""} key={label} onClick={() => setControlA(Number(value))}>{label}</button>
+                  ))}
+                </div>
+              )}
+              {activeModule.id === "life" && (
+                <div className="experiment-presets" aria-label="Organelle removal choices">
+                  {organelleNames.map((name, index) => <button className={controlA === index ? "active" : ""} key={name} onClick={() => setControlA(index)}>{index === 0 ? "Restore all" : `Remove ${name}`}</button>)}
+                </div>
+              )}
+              {activeModule.id === "earth-space" && (
+                <>
+                  <div className="experiment-presets" aria-label="Earth layer separation">
+                    {[[0, "Close layers"], [1, "Open slightly"], [3, "Separate fully"]].map(([value, label]) => <button className={controlA === value ? "active" : ""} key={label} onClick={() => setControlA(Number(value))}>{label}</button>)}
+                  </div>
+                  <div className="experiment-presets" aria-label="Earth layer choices">
+                    {earthLayerNames.map((name, index) => <button className={controlB === index ? "active" : ""} key={name} onClick={() => setControlB(index)}>{name}</button>)}
+                  </div>
+                </>
+              )}
               <div className="data-readout">
                 {observationModel.readouts.map((readout) => <span key={readout.label}>{readout.label} <strong>{readout.value}</strong></span>)}
               </div>

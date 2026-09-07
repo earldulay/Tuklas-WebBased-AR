@@ -852,6 +852,30 @@ input[type="range"] {
   margin: 10px 0;
 }
 
+.experiment-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.experiment-presets button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--blue);
+  cursor: pointer;
+  background: #fff;
+  font-weight: 800;
+}
+
+.experiment-presets button.active {
+  color: #fff;
+  border-color: var(--blue);
+  background: var(--blue);
+}
+
 .data-readout span {
   padding: 10px;
   border: 1px solid var(--line);
