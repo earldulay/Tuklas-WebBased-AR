@@ -531,6 +531,204 @@ input[type="range"] {
   background: #fff;
 }
 
+.activity-visual {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  color: #172033;
+}
+
+.circuit-visual {
+  grid-template-columns: 96px 1fr 96px;
+  gap: 16px;
+}
+
+.battery,
+.resistor,
+.sample-card {
+  display: grid;
+  place-items: center;
+  min-height: 64px;
+  padding: 10px;
+  border: 2px solid #172033;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  font-weight: 900;
+  text-align: center;
+}
+
+.wire-loop {
+  width: 100%;
+  height: 86px;
+  border: 5px solid #172033;
+  border-right: 0;
+  border-left: 0;
+}
+
+.bulb {
+  width: 68px;
+  height: 68px;
+  border: 4px solid #172033;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 34px rgba(247, 198, 0, 0.8);
+}
+
+.reaction-visual {
+  grid-template-columns: minmax(112px, 180px) minmax(150px, 1fr);
+  gap: 18px;
+}
+
+.beaker {
+  position: relative;
+  width: min(42vw, 150px);
+  height: 180px;
+  overflow: hidden;
+  border: 4px solid #172033;
+  border-top: 0;
+  border-radius: 0 0 22px 22px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.liquid {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: linear-gradient(#63d0b1, #0f8f83);
+}
+
+.beaker i {
+  position: relative;
+  z-index: 2;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin: 14px 7px;
+  border-radius: 50%;
+  background: #fff;
+  animation: rise 1.8s ease-in-out infinite;
+}
+
+.dna-visual {
+  align-content: center;
+  grid-template-columns: repeat(8, minmax(18px, 44px));
+  gap: 8px;
+}
+
+.dna-visual span {
+  height: 96px;
+  border-radius: 999px;
+  background: linear-gradient(#0f4c9a 0 42%, #f7c600 42% 58%, #d71920 58%);
+  transform: skewY(-18deg);
+}
+
+.dna-visual span.changed {
+  outline: 4px solid rgba(215, 25, 32, 0.38);
+}
+
+.trait-meter,
+.pressure-meter {
+  grid-column: 1 / -1;
+  width: min(360px, 100%);
+  height: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(23, 32, 51, 0.18);
+}
+
+.trait-meter span,
+.pressure-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+}
+
+.space-visual {
+  grid-template-columns: 96px 1fr;
+}
+
+.sun {
+  width: 82px;
+  height: 82px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 44px rgba(247, 198, 0, 0.72);
+}
+
+.earth {
+  position: relative;
+  width: 118px;
+  height: 118px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0f4c9a 0 58%, #2fab73 58%);
+}
+
+.earth span {
+  position: absolute;
+  top: -22px;
+  bottom: -22px;
+  left: 50%;
+  width: 4px;
+  background: #172033;
+}
+
+.orbit-line {
+  position: absolute;
+  right: 42px;
+  left: 132px;
+  height: 132px;
+  border: 3px dashed rgba(23, 32, 51, 0.48);
+  border-radius: 50%;
+}
+
+.ecosystem-visual {
+  grid-template-columns: 70px minmax(180px, 1fr);
+  gap: 20px;
+}
+
+.producer-bar {
+  position: relative;
+  width: 42px;
+  height: 170px;
+  border: 2px solid #172033;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.producer-bar span {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  left: 5px;
+  border-radius: 999px;
+  background: #2fab73;
+}
+
+.food-web {
+  display: grid;
+  gap: 12px;
+}
+
+.food-web span {
+  padding: 12px;
+  border: 2px solid #172033;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  font-weight: 900;
+  text-align: center;
+}
+
+@keyframes rise {
+  50% {
+    transform: translateY(-16px);
+  }
+}
+
 .offline-checklist ol {
   margin: 0;
   padding-left: 22px;
@@ -582,7 +780,7 @@ input[type="range"] {
 }
 
 .data-readout {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   margin: 10px 0;
 }
 
@@ -744,6 +942,22 @@ input[type="range"] {
   .control-grid,
   .data-readout {
     grid-template-columns: 1fr;
+  }
+
+  .circuit-visual,
+  .reaction-visual,
+  .space-visual,
+  .ecosystem-visual {
+    grid-template-columns: 1fr;
+  }
+
+  .wire-loop,
+  .orbit-line {
+    display: none;
+  }
+
+  .dna-visual {
+    grid-template-columns: repeat(4, minmax(18px, 1fr));
   }
 
   .force-arrow {

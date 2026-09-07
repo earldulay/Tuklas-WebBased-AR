@@ -8,6 +8,204 @@ import { ScienceScene } from "./components/ScienceScene";
 const progressKeys = ["prediction", "observation", "explanation", "result"] as const;
 const offlineAssets = ["/", "/index.html", "/manifest.webmanifest", "/service-worker.js", "/assets/tuklas-marker.svg"];
 
+interface ObservationModel {
+  title: string;
+  controlA: {
+    label: string;
+    min: number;
+    max: number;
+    step: number;
+    unit: string;
+  };
+  controlB: {
+    label: string;
+    min: number;
+    max: number;
+    step: number;
+    unit: string;
+  };
+  readouts: { label: string; value: string }[];
+  recordText: string;
+}
+
+function effectLevel(value: number) {
+  if (value < 3) return "Low";
+  if (value < 7) return "Moderate";
+  return "High";
+}
+
+function getObservationModel(moduleId: string, controlA: number, controlB: number): ObservationModel {
+  if (moduleId === "electricity") {
+    const current = controlA / controlB;
+    return {
+      title: "Series Circuit Model",
+      controlA: { label: "Voltage", min: 3, max: 12, step: 1, unit: "V" },
+      controlB: { label: "Resistance", min: 1, max: 10, step: 1, unit: "ohm" },
+      readouts: [
+        { label: "Voltage", value: `${controlA} V` },
+        { label: "Resistance", value: `${controlB} ohm` },
+        { label: "Current", value: `${current.toFixed(2)} A` },
+      ],
+      recordText: `Voltage: ${controlA} V; Resistance: ${controlB} ohm; Current: ${current.toFixed(2)} A`,
+    };
+  }
+
+  if (moduleId === "materials") {
+    const evidence = controlA + controlB >= 7 ? "Gas or precipitate visible" : "No strong new-substance evidence";
+    return {
+      title: "Reaction Evidence Model",
+      controlA: { label: "Heat level", min: 0, max: 5, step: 1, unit: "" },
+      controlB: { label: "Mixing level", min: 0, max: 5, step: 1, unit: "" },
+      readouts: [
+        { label: "Heat", value: `${controlA}/5` },
+        { label: "Mixing", value: `${controlB}/5` },
+        { label: "Evidence", value: evidence },
+      ],
+      recordText: `Heat level: ${controlA}/5; Mixing level: ${controlB}/5; Evidence: ${evidence}`,
+    };
+  }
+
+  if (moduleId === "life") {
+    const traitEffect = effectLevel(controlA + controlB);
+    return {
+      title: "DNA and Trait Model",
+      controlA: { label: "DNA changes", min: 0, max: 5, step: 1, unit: "" },
+      controlB: { label: "Expression strength", min: 1, max: 5, step: 1, unit: "" },
+      readouts: [
+        { label: "Changed bases", value: String(controlA) },
+        { label: "Expression", value: `${controlB}/5` },
+        { label: "Trait effect", value: traitEffect },
+      ],
+      recordText: `DNA changes: ${controlA}; Expression strength: ${controlB}/5; Trait effect: ${traitEffect}`,
+    };
+  }
+
+  if (moduleId === "earth-space") {
+    const daylight = 12 + Math.round(Math.cos((controlA * Math.PI) / 180) * controlB) / 2;
+    return {
+      title: "Earth-Sun Pattern Model",
+      controlA: { label: "Earth tilt", min: 0, max: 45, step: 5, unit: "deg" },
+      controlB: { label: "Sun angle", min: 0, max: 8, step: 1, unit: "" },
+      readouts: [
+        { label: "Tilt", value: `${controlA} deg` },
+        { label: "Sun angle", value: `${controlB}/8` },
+        { label: "Daylight", value: `about ${daylight.toFixed(1)} h` },
+      ],
+      recordText: `Earth tilt: ${controlA} deg; Sun angle: ${controlB}/8; Daylight pattern: about ${daylight.toFixed(1)} h`,
+    };
+  }
+
+  if (moduleId === "ecosystems") {
+    const consumers = Math.round(controlA * (1 - controlB / 12));
+    const stability = consumers >= 55 ? "Stable" : consumers >= 30 ? "At risk" : "Disrupted";
+    return {
+      title: "Food Web Energy Model",
+      controlA: { label: "Producers", min: 20, max: 100, step: 10, unit: "%" },
+      controlB: { label: "Consumer pressure", min: 0, max: 8, step: 1, unit: "" },
+      readouts: [
+        { label: "Producers", value: `${controlA}%` },
+        { label: "Pressure", value: `${controlB}/8` },
+        { label: "Consumers", value: stability },
+      ],
+      recordText: `Producer population: ${controlA}%; Consumer pressure: ${controlB}/8; Consumer response: ${consumers}% (${stability})`,
+    };
+  }
+
+  const acceleration = controlA / controlB;
+  return {
+    title: "Force and Motion Model",
+    controlA: { label: "Force", min: 0, max: 6, step: 1, unit: "N" },
+    controlB: { label: "Mass", min: 1, max: 4, step: 1, unit: "kg" },
+    readouts: [
+      { label: "Force", value: `${controlA} N` },
+      { label: "Mass", value: `${controlB} kg` },
+      { label: "Acceleration", value: `${acceleration.toFixed(1)} m/s^2` },
+    ],
+    recordText: `Force: ${controlA} N; Mass: ${controlB} kg; Acceleration: ${acceleration.toFixed(1)} m/s^2`,
+  };
+}
+
+function getObservationDefaults(moduleId: string) {
+  if (moduleId === "electricity") return { controlA: 6, controlB: 3 };
+  if (moduleId === "materials") return { controlA: 2, controlB: 2 };
+  if (moduleId === "life") return { controlA: 1, controlB: 3 };
+  if (moduleId === "earth-space") return { controlA: 25, controlB: 4 };
+  if (moduleId === "ecosystems") return { controlA: 80, controlB: 2 };
+  return { controlA: 2, controlB: 1 };
+}
+
+function ActivityVisual({ moduleId, controlA, controlB, trialPulse }: { moduleId: string; controlA: number; controlB: number; trialPulse: number }) {
+  if (moduleId === "motion") {
+    const acceleration = controlA / controlB;
+    const cartDistance = Math.min(210, 26 + acceleration * 46);
+    return (
+      <>
+        <ScienceScene acceleration={acceleration} force={controlA} mass={controlB} viewMode="fallback" />
+        <div className="track" />
+        <div className="cart" style={{ transform: `translateX(${trialPulse ? cartDistance : 0}px)` }}><span>{controlB} kg</span></div>
+        <div className="force-arrow" style={{ transform: `scaleX(${Math.max(0.2, controlA / 3)})` }} />
+        <div className="hand" aria-hidden="true" />
+      </>
+    );
+  }
+
+  if (moduleId === "electricity") {
+    const glow = Math.min(1, controlA / controlB / 4);
+    return (
+      <div className="activity-visual circuit-visual" data-pulse={trialPulse}>
+        <div className="battery"><span>{controlA} V</span></div>
+        <div className="wire-loop" />
+        <div className="resistor"><span>{controlB} ohm</span></div>
+        <div className="bulb" style={{ opacity: 0.35 + glow }} />
+      </div>
+    );
+  }
+
+  if (moduleId === "materials") {
+    const reaction = controlA + controlB;
+    return (
+      <div className="activity-visual reaction-visual" data-pulse={trialPulse}>
+        <div className="beaker">
+          <span className="liquid" style={{ height: `${38 + reaction * 4}%` }} />
+          {Array.from({ length: Math.min(10, reaction + 1) }).map((_, index) => <i key={index} />)}
+        </div>
+        <div className="sample-card">{reaction >= 7 ? "Visible evidence formed" : "Compare control and treatment"}</div>
+      </div>
+    );
+  }
+
+  if (moduleId === "life") {
+    return (
+      <div className="activity-visual dna-visual" data-pulse={trialPulse}>
+        {Array.from({ length: 8 }).map((_, index) => <span className={index < controlA ? "changed" : ""} key={index} />)}
+        <div className="trait-meter"><span style={{ width: `${Math.min(100, (controlA + controlB) * 10)}%` }} /></div>
+      </div>
+    );
+  }
+
+  if (moduleId === "earth-space") {
+    return (
+      <div className="activity-visual space-visual" data-pulse={trialPulse}>
+        <div className="sun" />
+        <div className="earth" style={{ transform: `rotate(${controlA - 20}deg)` }}><span /></div>
+        <div className="orbit-line" style={{ opacity: 0.3 + controlB / 14 }} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="activity-visual ecosystem-visual" data-pulse={trialPulse}>
+      <div className="producer-bar"><span style={{ height: `${controlA}%` }} /></div>
+      <div className="food-web">
+        <span>Producers</span>
+        <span>Consumers</span>
+        <span>Predators</span>
+      </div>
+      <div className="pressure-meter"><span style={{ width: `${controlB * 12.5}%` }} /></div>
+    </div>
+  );
+}
+
 function App() {
   const [role, setRole] = useState<Role | "">(() => (localStorage.getItem("tuklas-role") as Role | null) || "");
   const [screen, setScreen] = useState<Screen>("home");
@@ -24,9 +222,9 @@ function App() {
   const [explanation, setExplanation] = useState("");
   const [reflection, setReflection] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem("tuklas-view-mode") as ViewMode | null) || "ar");
-  const [force, setForce] = useState(2);
-  const [mass, setMass] = useState(1);
-  const [cartDistance, setCartDistance] = useState(0);
+  const [controlA, setControlA] = useState(2);
+  const [controlB, setControlB] = useState(1);
+  const [trialPulse, setTrialPulse] = useState(0);
   const [toast, setToast] = useState("");
   const [online, setOnline] = useState(navigator.onLine);
   const [offlineStatus, setOfflineStatus] = useState("Cache app shell, six modules, marker, and local records support.");
@@ -41,7 +239,7 @@ function App() {
   );
   const progressCount = progressKeys.filter((key) => progress[activeModule.id]?.[key]).length;
   const percent = Math.round((progressCount / progressKeys.length) * 100);
-  const acceleration = force / mass;
+  const observationModel = getObservationModel(activeModule.id, controlA, controlB);
 
   const nextTask =
     progressCount === 0
@@ -75,6 +273,13 @@ function App() {
   useEffect(() => {
     document.body.classList.toggle("login-open", !role);
   }, [role]);
+
+  useEffect(() => {
+    const defaults = getObservationDefaults(activeModule.id);
+    setControlA(defaults.controlA);
+    setControlB(defaults.controlB);
+    setTrialPulse(0);
+  }, [activeModule.id]);
 
   useEffect(() => {
     if (screen !== "observe" || viewMode !== "ar") stopCamera();
@@ -341,7 +546,7 @@ function App() {
                 await addRecord("Predict", text);
                 setPredictionReview(`${selectedPrediction}${predictionNote.trim() ? `\n${predictionNote.trim()}` : ""}`);
                 markProgress("prediction");
-                setCartDistance(0);
+                setTrialPulse(0);
                 goTo("observe");
               }}>Next</button>
             </article>
@@ -357,11 +562,7 @@ function App() {
               </div>
               <div className={`ar-frame ${viewMode === "fallback" ? "fallback-mode" : ""}`}>
                 {viewMode === "ar" && <video ref={videoRef} className="camera-video" muted playsInline autoPlay />}
-                <ScienceScene acceleration={acceleration} force={force} mass={mass} viewMode={viewMode} />
-                <div className="track" />
-                <div className="cart" style={{ transform: `translateX(${cartDistance}px)` }}><span>{mass} kg</span></div>
-                <div className="force-arrow" style={{ transform: `scaleX(${Math.max(0.2, force / 3)})` }} />
-                <div className="hand" aria-hidden="true" />
+                <ActivityVisual moduleId={activeModule.id} controlA={controlA} controlB={controlB} trialPulse={trialPulse} />
               </div>
               {viewMode === "ar" && (
                 <>
@@ -377,16 +578,15 @@ function App() {
               <p className="eyebrow">Observation Prompt</p>
               <p>{activeModule.observe}</p>
               <div className="control-grid">
-                <label>Force<input type="range" min={0} max={6} step={1} value={force} onChange={(event) => setForce(Number(event.target.value))} /></label>
-                <label>Mass<input type="range" min={1} max={4} step={1} value={mass} onChange={(event) => setMass(Number(event.target.value))} /></label>
+                <label>{observationModel.controlA.label}<input type="range" min={observationModel.controlA.min} max={observationModel.controlA.max} step={observationModel.controlA.step} value={controlA} onChange={(event) => setControlA(Number(event.target.value))} /></label>
+                <label>{observationModel.controlB.label}<input type="range" min={observationModel.controlB.min} max={observationModel.controlB.max} step={observationModel.controlB.step} value={controlB} onChange={(event) => setControlB(Number(event.target.value))} /></label>
               </div>
               <div className="data-readout">
-                <span>Force <strong>{force} N</strong></span>
-                <span>Acceleration <strong>{acceleration.toFixed(1)} m/s^2</strong></span>
+                {observationModel.readouts.map((readout) => <span key={readout.label}>{readout.label} <strong>{readout.value}</strong></span>)}
               </div>
               <button className="primary-button" onClick={async () => {
-                setCartDistance(Math.min(210, 26 + acceleration * 46));
-                await addRecord("Observe", `Mode: ${viewMode}; Force: ${force} N; Mass: ${mass} kg; Acceleration: ${acceleration.toFixed(1)} m/s^2`);
+                setTrialPulse((current) => current + 1);
+                await addRecord("Observe", `Mode: ${viewMode}; ${observationModel.recordText}`);
                 markProgress("observation");
               }}>Run Trial</button>
               <button className="secondary-button" onClick={() => progress[activeModule.id]?.observation ? goTo("explain") : showToast("Run at least one AR or 3D trial first.")}>Continue</button>
