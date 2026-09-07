@@ -39,12 +39,20 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
     const trackedRoot = new THREE.Group();
     scene.add(trackedRoot);
 
+    const presentationRoot = new THREE.Group();
+    if (viewMode === "ar") {
+      presentationRoot.visible = false;
+      scene.add(presentationRoot);
+    } else {
+      trackedRoot.add(presentationRoot);
+    }
+
     // AR.js writes the marker matrix to trackedRoot every frame. Keep model
     // scale and placement on a child so tracking cannot overwrite them.
     const modelRoot = new THREE.Group();
     modelRoot.scale.setScalar(viewMode === "ar" ? 0.18 : 1);
     modelRoot.position.y = viewMode === "ar" ? 0.08 : 0;
-    trackedRoot.add(modelRoot);
+    presentationRoot.add(modelRoot);
 
     if (viewMode === "ar") {
       const markerSurface = new THREE.Mesh(
@@ -146,6 +154,8 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
     let arContext: ArToolkitContext | null = null;
     let cancelled = false;
     let markerVisible = false;
+    let hasStablePose = false;
+    let missedFrames = 0;
 
     const render = () => {
       frame += 0.012;
@@ -185,6 +195,26 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
       }
       if (viewMode === "ar" && arSource?.ready && arContext) {
         arContext.update(arSource.domElement);
+        if (trackedRoot.visible) {
+          missedFrames = 0;
+          presentationRoot.visible = true;
+          if (!hasStablePose) {
+            presentationRoot.position.copy(trackedRoot.position);
+            presentationRoot.quaternion.copy(trackedRoot.quaternion);
+            presentationRoot.scale.copy(trackedRoot.scale);
+            hasStablePose = true;
+          } else {
+            presentationRoot.position.lerp(trackedRoot.position, 0.32);
+            presentationRoot.quaternion.slerp(trackedRoot.quaternion, 0.28);
+            presentationRoot.scale.lerp(trackedRoot.scale, 0.32);
+          }
+        } else if (hasStablePose) {
+          missedFrames += 1;
+          if (missedFrames > 6) {
+            presentationRoot.visible = false;
+            hasStablePose = false;
+          }
+        }
         if (trackedRoot.visible !== markerVisible) {
           markerVisible = trackedRoot.visible;
           onArStatus?.(markerVisible ? "Tuklas marker detected." : "Looking for the Tuklas marker...");
@@ -217,8 +247,8 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
 
           const source = new THREEx.ArToolkitSource({
             sourceType: "webcam",
-            sourceWidth: 1280,
-            sourceHeight: 720,
+            sourceWidth: 640,
+            sourceHeight: 480,
             displayWidth: mount.clientWidth,
             displayHeight: mount.clientHeight,
           });
@@ -227,6 +257,8 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
             cameraParametersUrl,
             detectionMode: "mono",
             patternRatio: 0.5,
+            canvasWidth: 640,
+            canvasHeight: 480,
           });
           arSource = source;
           arContext = context;
@@ -235,6 +267,7 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
             type: "pattern",
             patternUrl: tuklasMarkerUrl,
             changeMatrixMode: "modelViewMatrix",
+            minConfidence: 0.7,
           });
 
           source.init(
