@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchModules, syncRecords } from "./lib/api";
 import { clearRecords, loadProgress, loadRecords, replaceRecords, saveProgress, saveRecord } from "./lib/storage";
 import { modules as fallbackModules } from "./data/modules";
@@ -31,7 +31,10 @@ function App() {
   const [online, setOnline] = useState(navigator.onLine);
   const [offlineStatus, setOfflineStatus] = useState("Cache app shell, six modules, marker, and local records support.");
   const [deviceStatus, setDeviceStatus] = useState("Camera, WebGL, service worker, and storage readiness.");
+  const [cameraStatus, setCameraStatus] = useState("Camera is off.");
   const [updateStatus, setUpdateStatus] = useState("Last checked: Today");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
 
   const visibleModules = useMemo(
     () => modules.filter((item) => `${item.title} ${item.subtitle} ${item.quarter}`.toLowerCase().includes(query.toLowerCase())),
@@ -74,9 +77,67 @@ function App() {
     document.body.classList.toggle("login-open", !role);
   }, [role]);
 
+  useEffect(() => {
+    if (screen !== "observe" || viewMode !== "ar") stopCamera();
+  }, [screen, viewMode]);
+
+  useEffect(() => () => stopCamera(), []);
+
   function showToast(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
+  }
+
+  function isSecureCameraOrigin() {
+    return location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+  }
+
+  function stopCamera() {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraStatus("Camera is off.");
+  }
+
+  async function startCamera() {
+    if (!isSecureCameraOrigin()) {
+      const message = "Camera needs HTTPS or localhost.";
+      setCameraStatus(message);
+      showToast(message);
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      const message = "Camera API is unavailable in this browser.";
+      setCameraStatus(message);
+      showToast(message);
+      return;
+    }
+
+    try {
+      stopCamera();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      });
+      cameraStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      const message = "Camera is live.";
+      setCameraStatus(message);
+      showToast(message);
+    } catch (error) {
+      const blocked = error instanceof DOMException && error.name === "NotAllowedError";
+      const message = blocked ? "Camera permission was blocked." : "Camera failed to start.";
+      setCameraStatus(message);
+      showToast(message);
+    }
   }
 
   function goTo(nextScreen: Screen, push = true) {
@@ -301,6 +362,7 @@ function App() {
                 <button className="text-button compact-button" onClick={() => setViewMode(viewMode === "ar" ? "fallback" : "ar")}>{viewMode === "ar" ? "Use 3D" : "Use AR"}</button>
               </div>
               <div className={`ar-frame ${viewMode === "fallback" ? "fallback-mode" : ""}`}>
+                {viewMode === "ar" && <video ref={videoRef} className="camera-video" muted playsInline autoPlay />}
                 <div className="camera-layer" aria-hidden="true" />
                 <div className="marker-target"><span>TUKLAS</span></div>
                 <div className="corner tl" /><div className="corner tr" /><div className="corner bl" /><div className="corner br" />
@@ -310,7 +372,12 @@ function App() {
                 <div className="force-arrow" style={{ transform: `scaleX(${Math.max(0.2, force / 3)})` }} />
                 <div className="hand" aria-hidden="true" />
               </div>
-              <div className="tool-grid">{["Labels", "Graph", "Data"].map((label) => <button key={label} onClick={() => showToast(`${label} view selected.`)}>{label}</button>)}</div>
+              <p className="camera-status">{cameraStatus}</p>
+              <div className="tool-grid">
+                {viewMode === "ar" && <button onClick={startCamera}>Start Camera</button>}
+                {viewMode === "ar" && <button onClick={stopCamera}>Stop Camera</button>}
+                {["Labels", "Graph", "Data"].map((label) => <button key={label} onClick={() => showToast(`${label} view selected.`)}>{label}</button>)}
+              </div>
             </article>
             <article className="panel-card">
               <p className="eyebrow">Observation Prompt</p>
