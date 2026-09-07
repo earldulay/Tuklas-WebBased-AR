@@ -5,6 +5,7 @@ const ASSETS = [
   "/manifest.webmanifest",
   "/assets/camera_para.dat",
   "/assets/tuklas-marker.patt",
+  "/assets/tuklas-marker.png",
   "/assets/tuklas-marker.svg"
 ];
 

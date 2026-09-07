@@ -1,5 +1,10 @@
 import { writeFileSync } from "node:fs";
 
+// This script is kept for future custom-marker experiments. The production AR
+// flow currently uses the known-good AR.js Hiro image/pattern pair, saved as
+// tuklas-marker.png and tuklas-marker.patt, because ARToolKit pattern matching
+// is sensitive to how the .patt file is trained.
+
 const rows = [
   "1111000000001110",
   "1111000000001110",

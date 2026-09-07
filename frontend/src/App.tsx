@@ -13,6 +13,7 @@ const offlineAssets = [
   "/service-worker.js",
   "/assets/camera_para.dat",
   "/assets/tuklas-marker.patt",
+  "/assets/tuklas-marker.png",
   "/assets/tuklas-marker.svg",
 ];
 
@@ -419,7 +420,7 @@ function App() {
             <h2>One printed marker per group</h2>
             <p>Students use the same marker across lessons during camera observation.</p>
           </div>
-          <a className="marker-preview" href="/assets/tuklas-marker.svg" target="_blank" rel="noreferrer" aria-label="Open printable Tuklas AR marker"><span>TUKLAS</span></a>
+          <a className="marker-preview" href="/assets/tuklas-marker.png" target="_blank" rel="noreferrer" aria-label="Open printable Tuklas AR marker"><span>TUKLAS</span></a>
         </section>
       </main>
     );
@@ -458,7 +459,7 @@ function App() {
                 <h2>Print one marker per group</h2>
                 <p>Use this marker during camera observation so each group can anchor the activity in the same classroom setup.</p>
               </div>
-              <a className="marker-preview" href="/assets/tuklas-marker.svg" target="_blank" rel="noreferrer" aria-label="Open printable Tuklas AR marker"><span>TUKLAS</span></a>
+              <a className="marker-preview" href="/assets/tuklas-marker.png" target="_blank" rel="noreferrer" aria-label="Open printable Tuklas AR marker"><span>TUKLAS</span></a>
             </article>
             <article className="panel-card">
               <div className="row-between">
