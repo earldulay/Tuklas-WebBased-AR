@@ -396,6 +396,20 @@ small {
   font-weight: 800;
 }
 
+button.module-progress-row {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.graded-badge {
+  color: var(--blue) !important;
+}
+
 .marker-access,
 .marker-access-copy {
   display: grid;

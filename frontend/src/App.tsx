@@ -323,7 +323,8 @@ function App() {
   const moduleProgress = modules.map((module) => {
     const stages = stagesFor(records, module.id);
     const completed = REQUIRED_STAGES.filter((stage) => stages.has(stage)).length;
-    return { module, completed, percent: Math.round((completed / REQUIRED_STAGES.length) * 100) };
+    const grade = myFeedback.find((entry) => entry.moduleId === module.id);
+    return { module, completed, percent: Math.round((completed / REQUIRED_STAGES.length) * 100), stages, grade };
   });
   const overallCompleted = moduleProgress.reduce((total, item) => total + item.completed, 0);
   const overallTotal = modules.length * REQUIRED_STAGES.length;
@@ -577,6 +578,17 @@ function App() {
     } catch (error) {
       showToast(error instanceof ApiError ? error.message : "Could not reset progress.");
     }
+  }
+
+  // Sends a student to wherever their progress on this module actually is,
+  // so tapping a graded row on Home lands them on a screen that shows the
+  // "Teacher Feedback" card (the locked Predict screen or Result) instead of
+  // a fresh, unlocked Predict form.
+  function openModuleProgress(module: LearningModule, stages: Set<Stage>) {
+    setActiveModule(module);
+    if (stages.has("Explain")) goTo("result");
+    else if (stages.has("Observe")) goTo("explain");
+    else goTo("detail");
   }
 
   function openGrading(student: AuthUser, moduleId: string) {
@@ -854,15 +866,18 @@ function App() {
                 <div className="progress-track overall-track"><span style={{ width: `${overallPercent}%` }} /></div>
                 <p>{overallCompleted} of {overallTotal} activity stages completed</p>
                 <div className="module-progress-list">
-                  {moduleProgress.map(({ module, completed, percent: modulePercent }) => (
-                    <div className="module-progress-row" key={module.id}>
+                  {moduleProgress.map(({ module, completed, percent: modulePercent, stages, grade }) => (
+                    <button type="button" className="module-progress-row" key={module.id} onClick={() => openModuleProgress(module, stages)}>
                       <ModuleIcon moduleId={module.id} />
                       <div>
                         <div className="row-between"><strong>{module.quarter}: {module.title}</strong><span>{modulePercent}%</span></div>
                         <div className="progress-track"><span style={{ width: `${modulePercent}%` }} /></div>
-                        <small>{completed} of {REQUIRED_STAGES.length} stages</small>
+                        <div className="row-between">
+                          <small>{completed} of {REQUIRED_STAGES.length} stages</small>
+                          {grade && <small className="graded-badge">Graded{grade.score != null ? ` · ${grade.score}/100` : ""}</small>}
+                        </div>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </article>
