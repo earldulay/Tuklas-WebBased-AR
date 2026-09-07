@@ -644,7 +644,10 @@ function App() {
                     <strong className="overall-percent">{students.length}</strong>
                   </div>
                   <p>{students.length} student account{students.length === 1 ? "" : "s"} - {classRecords.length} submission{classRecords.length === 1 ? "" : "s"} synced</p>
-                  <button className="secondary-button compact-button" onClick={() => goTo("classes")}>Manage Classes</button>
+                  <div className="home-actions">
+                    <button className="secondary-button compact-button" onClick={() => goTo("classes")}>Manage Classes</button>
+                    <button className="text-button compact-button" onClick={() => goTo("modules")}>Preview Lessons</button>
+                  </div>
                 </article>
                 <article className="panel-card class-roster">
                   <p className="eyebrow">Student Progress</p>
@@ -981,15 +984,19 @@ function App() {
       </main>
 
       <nav className="bottom-nav" aria-label="Primary navigation">
-        {(isTeacherPreview ? (["home", "classes", "settings"] as Screen[]) : (["home", "modules", "settings"] as Screen[])).map((item) => (
-          <button
-            key={item}
-            className={screen === item || (screen === "detail" && item === "modules") || (screen === "section" && item === "classes") ? "active" : ""}
-            onClick={() => goTo(item)}
-          >
-            {item === "modules" ? "Lessons" : item === "classes" ? "Classes" : item[0].toUpperCase() + item.slice(1)}
-          </button>
-        ))}
+        {(isTeacherPreview ? (["home", "classes", "settings"] as Screen[]) : (["home", "modules", "settings"] as Screen[])).map((item) => {
+          const previewFlowScreens: Screen[] = ["modules", "detail", "observe", "explain", "result"];
+          const isActive =
+            screen === item ||
+            (screen === "detail" && item === "modules") ||
+            (screen === "section" && item === "classes") ||
+            (isTeacherPreview && item === "home" && previewFlowScreens.includes(screen));
+          return (
+            <button key={item} className={isActive ? "active" : ""} onClick={() => goTo(item)}>
+              {item === "modules" ? "Lessons" : item === "classes" ? "Classes" : item[0].toUpperCase() + item.slice(1)}
+            </button>
+          );
+        })}
       </nav>
 
       <div className={`toast ${toast ? "show" : ""}`} role="status" aria-live="polite">{toast}</div>

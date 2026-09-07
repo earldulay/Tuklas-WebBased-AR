@@ -1314,6 +1314,13 @@ input[type="range"] {
   background: #eaf2ff;
 }
 
+.home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .student-avatar {
   display: grid;
   place-items: center;
