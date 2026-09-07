@@ -32,17 +32,33 @@ model User {
   passwordHash String
   role         Role
   name         String
-  section      String?
   createdAt    DateTime @default(now())
 
   createdById String?
   createdBy   User?   @relation("TeacherStudents", fields: [createdById], references: [id])
   students    User[]  @relation("TeacherStudents")
 
+  sectionId       String?
+  enrolledSection Section?  @relation("SectionStudents", fields: [sectionId], references: [id])
+  ownedSections   Section[] @relation("TeacherSections")
+
   records ActivityRecord[]
 
   @@index([role])
   @@index([createdById])
+  @@index([sectionId])
+}
+
+model Section {
+  id        String   @id @default(cuid())
+  name      String
+  teacherId String
+  teacher   User     @relation("TeacherSections", fields: [teacherId], references: [id])
+  createdAt DateTime @default(now())
+
+  students User[] @relation("SectionStudents")
+
+  @@index([teacherId])
 }
 
 model Module {

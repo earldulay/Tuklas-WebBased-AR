@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ApiError, createStudent, fetchClassProgress, fetchModules, login as apiLogin, registerTeacher, syncRecords } from "./lib/api";
+import { ApiError, createSection, createSectionStudent, fetchClassProgress, fetchModules, getSection, listSections, login as apiLogin, registerTeacher, syncRecords } from "./lib/api";
 import { clearSession, getStoredUser, setSession } from "./lib/auth";
 import { clearRecords, loadProgress, loadRecords, replaceRecords, saveProgress, saveRecord } from "./lib/storage";
 import { modules as fallbackModules } from "./data/modules";
-import type { ActivityRecord, AuthUser, ClassProgressRecord, LearningModule, ProgressState, Role, Screen, Stage, ViewMode } from "./types/domain";
+import type { ActivityRecord, AuthUser, ClassProgressRecord, LearningModule, ProgressState, Role, Screen, Section, SectionSummary, Stage, ViewMode } from "./types/domain";
 import { ScienceScene } from "./components/ScienceScene";
 import { Activity, CircuitBoard, Download, Earth, Microscope, Printer, Thermometer, type LucideIcon } from "lucide-react";
 
@@ -250,8 +250,13 @@ function App() {
   const [studentUsername, setStudentUsername] = useState("");
   const [studentPassword, setStudentPassword] = useState("");
   const [studentName, setStudentName] = useState("");
-  const [studentSection, setStudentSection] = useState("");
   const [studentFormError, setStudentFormError] = useState("");
+  const [sections, setSections] = useState<SectionSummary[]>([]);
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<Section | null>(null);
+  const [sectionStudents, setSectionStudents] = useState<AuthUser[]>([]);
+  const [newSectionName, setNewSectionName] = useState("");
+  const [sectionFormError, setSectionFormError] = useState("");
   const [screen, setScreen] = useState<Screen>("home");
   const [history, setHistory] = useState<Screen[]>([]);
   const [modules, setModules] = useState<LearningModule[]>(fallbackModules);
@@ -330,7 +335,7 @@ function App() {
   }, [viewMode]);
 
   useEffect(() => {
-    if ((screen === "home" || screen === "settings") && role === "teacher") {
+    if (screen === "home" && role === "teacher") {
       fetchClassProgress()
         .then((result) => {
           setStudents(result.students);
@@ -339,6 +344,23 @@ function App() {
         .catch(() => undefined);
     }
   }, [screen, role]);
+
+  useEffect(() => {
+    if (screen === "classes" && role === "teacher") {
+      listSections().then((result) => setSections(result.sections)).catch(() => undefined);
+    }
+  }, [screen, role]);
+
+  useEffect(() => {
+    if (screen === "section" && activeSectionId) {
+      getSection(activeSectionId)
+        .then((result) => {
+          setActiveSection(result.section);
+          setSectionStudents(result.students);
+        })
+        .catch(() => undefined);
+    }
+  }, [screen, activeSectionId]);
 
   useEffect(() => {
     document.body.classList.toggle("login-open", !role);
@@ -406,20 +428,45 @@ function App() {
     }
   }
 
-  async function handleCreateStudent(event: FormEvent) {
+  async function handleCreateSection(event: FormEvent) {
+    event.preventDefault();
+    setSectionFormError("");
+    if (!newSectionName.trim()) {
+      setSectionFormError("Section name is required.");
+      return;
+    }
+    try {
+      const result = await createSection(newSectionName.trim());
+      setSections((current) => [{ ...result.section, studentCount: 0 }, ...current]);
+      setNewSectionName("");
+      showToast(`Section "${result.section.name}" created.`);
+    } catch (error) {
+      setSectionFormError(error instanceof ApiError ? error.message : "Could not create section.");
+    }
+  }
+
+  function openSection(sectionId: string) {
+    setActiveSectionId(sectionId);
+    setActiveSection(null);
+    setSectionStudents([]);
+    goTo("section");
+  }
+
+  async function handleCreateSectionStudent(event: FormEvent) {
     event.preventDefault();
     setStudentFormError("");
+    if (!activeSectionId) return;
     if (!studentUsername.trim() || !studentPassword || !studentName.trim()) {
       setStudentFormError("Username, password, and name are required.");
       return;
     }
     try {
-      const result = await createStudent(studentUsername.trim(), studentPassword, studentName.trim(), studentSection.trim());
-      setStudents((current) => [result.user, ...current]);
+      const result = await createSectionStudent(activeSectionId, studentUsername.trim(), studentPassword, studentName.trim());
+      setSectionStudents((current) => [result.user, ...current]);
+      setSections((current) => current.map((section) => (section.id === activeSectionId ? { ...section, studentCount: section.studentCount + 1 } : section)));
       setStudentUsername("");
       setStudentPassword("");
       setStudentName("");
-      setStudentSection("");
       showToast(`Student account "${result.user.username}" created.`);
     } catch (error) {
       setStudentFormError(error instanceof ApiError ? error.message : "Could not create student account.");
@@ -517,7 +564,9 @@ function App() {
     observe: [viewMode === "ar" ? "Camera Observation" : "3D Observation", activeModule.title],
     explain: ["Explain", activeModule.title],
     result: ["Results", "Activity Summary"],
-    settings: ["Setup", "Device and Saved Work"],
+    settings: ["Setup", isTeacherPreview ? "Device Setup" : "Device and Saved Work"],
+    classes: ["Classes", "Sections You Handle"],
+    section: ["Section", activeSection?.name || "Section"],
   };
 
   if (!user) {
@@ -595,7 +644,7 @@ function App() {
                     <strong className="overall-percent">{students.length}</strong>
                   </div>
                   <p>{students.length} student account{students.length === 1 ? "" : "s"} - {classRecords.length} submission{classRecords.length === 1 ? "" : "s"} synced</p>
-                  <button className="secondary-button compact-button" onClick={() => goTo("settings")}>Manage Students</button>
+                  <button className="secondary-button compact-button" onClick={() => goTo("classes")}>Manage Classes</button>
                 </article>
                 <article className="panel-card class-roster">
                   <p className="eyebrow">Student Progress</p>
@@ -604,12 +653,12 @@ function App() {
                       <div className="module-progress-row" key={student.id}>
                         <span className="student-avatar" aria-hidden="true">{student.name.trim().slice(0, 2).toUpperCase() || "ST"}</span>
                         <div>
-                          <div className="row-between"><strong>{student.name}{student.section ? ` - ${student.section}` : ""}</strong><span>{studentPercent}%</span></div>
+                          <div className="row-between"><strong>{student.name}</strong><span>{studentPercent}%</span></div>
                           <div className="progress-track"><span style={{ width: `${studentPercent}%` }} /></div>
                           <small>{recordCount} submission{recordCount === 1 ? "" : "s"} synced</small>
                         </div>
                       </div>
-                    )) : <p className="muted">No students yet. Add one from Settings.</p>}
+                    )) : <p className="muted">No students yet. Add one from the Classes tab.</p>}
                   </div>
                 </article>
               </>
@@ -856,50 +905,89 @@ function App() {
             <button className="settings-row" onClick={handleSync}><span><strong>Sync Saved Work</strong><small>{records.filter((record) => !record.syncedAt).length} records waiting to sync.</small></span><span aria-hidden="true">&gt;</span></button>
             <button className="settings-row" onClick={checkDevice}><span><strong>Device Check</strong><small>{deviceStatus}</small></span><span aria-hidden="true">&gt;</span></button>
             <article className="panel-card offline-checklist"><p className="eyebrow">Offline Setup</p><ol><li>Open this HTTPS app while connected.</li><li>Tap Prepare for Offline Use.</li><li>Add the app to the home screen.</li><li>Reopen in airplane mode and run one trial.</li></ol></article>
-            {role === "teacher" && (
-              <article className="panel-card manage-students">
-                <div className="row-between"><h2>Manage Students</h2></div>
-                <form className="auth-form compact-form" onSubmit={handleCreateStudent}>
-                  <label className="field-label">Full name<input type="text" value={studentName} onChange={(event) => setStudentName(event.target.value)} required /></label>
-                  <label className="field-label">Username<input type="text" value={studentUsername} onChange={(event) => setStudentUsername(event.target.value)} required minLength={3} /></label>
-                  <label className="field-label">Password<input type="password" value={studentPassword} onChange={(event) => setStudentPassword(event.target.value)} required minLength={8} /></label>
-                  <label className="field-label">Section (optional)<input type="text" value={studentSection} onChange={(event) => setStudentSection(event.target.value)} /></label>
-                  {studentFormError && <p className="auth-error" role="alert">{studentFormError}</p>}
-                  <button className="secondary-button" type="submit">Add Student</button>
-                </form>
+            {!isTeacherPreview && (
+              <article className="panel-card teacher-tools">
+                <div className="row-between"><h2>Saved Work</h2><button className="text-button compact-button" onClick={async () => { await clearRecords(); setRecords([]); showToast("Saved progress cleared."); }}>Clear</button></div>
                 <div className="records-list">
-                  {students.length ? students.map((student) => (
-                    <article className="record-card" key={student.id}>
-                      <small>{student.username}{student.section ? ` / ${student.section}` : ""}</small>
-                      <p>{student.name}</p>
-                    </article>
-                  )) : <p className="muted">No student accounts created yet.</p>}
+                  {records.length ? records.slice().reverse().map((record) => <article className="record-card" key={record.id}><small>{record.role} / {record.module} / {record.stage} / {new Date(record.createdAt).toLocaleString()} {record.syncedAt ? "/ synced" : "/ offline"}</small><p>{record.text}</p></article>) : <p className="muted">No saved progress on this device yet.</p>}
                 </div>
+                <button className="secondary-button" onClick={() => {
+                  const blob = new Blob([JSON.stringify(records, null, 2)], { type: "application/json" });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement("a");
+                  link.href = url;
+                  link.download = "tuklas-saved-progress.json";
+                  link.click();
+                  URL.revokeObjectURL(url);
+                }}>Export JSON</button>
               </article>
             )}
-            <article className="panel-card teacher-tools">
-              <div className="row-between"><h2>Saved Work</h2><button className="text-button compact-button" onClick={async () => { await clearRecords(); setRecords([]); showToast("Saved progress cleared."); }}>Clear</button></div>
+          </section>
+        )}
+
+        {screen === "classes" && (
+          <section className="screen active">
+            <article className="panel-card">
+              <p className="eyebrow">New Section</p>
+              <form className="auth-form compact-form" onSubmit={handleCreateSection}>
+                <label className="field-label">Section name<input type="text" placeholder="e.g. Grade 9 - Rizal" value={newSectionName} onChange={(event) => setNewSectionName(event.target.value)} required /></label>
+                {sectionFormError && <p className="auth-error" role="alert">{sectionFormError}</p>}
+                <button className="secondary-button" type="submit">Create Section</button>
+              </form>
+            </article>
+            <div className="module-list">
+              {sections.length ? sections.map((section) => (
+                <button className="module-card" key={section.id} onClick={() => openSection(section.id)}>
+                  <span className="student-avatar" aria-hidden="true">{section.name.trim().slice(0, 2).toUpperCase() || "SC"}</span>
+                  <span><strong>{section.name}</strong><small>{section.studentCount} student{section.studentCount === 1 ? "" : "s"}</small></span>
+                  <small aria-hidden="true" />
+                  <span aria-hidden="true">&gt;</span>
+                </button>
+              )) : <p className="muted">No sections yet. Create one above.</p>}
+            </div>
+          </section>
+        )}
+
+        {screen === "section" && (
+          <section className="screen active">
+            <article className="panel-card">
+              <p className="eyebrow">Section</p>
+              <h2>{activeSection?.name || "Loading..."}</h2>
+              <p>{sectionStudents.length} student{sectionStudents.length === 1 ? "" : "s"} enrolled</p>
+            </article>
+            <article className="panel-card">
+              <p className="eyebrow">Add Student</p>
+              <form className="auth-form compact-form" onSubmit={handleCreateSectionStudent}>
+                <label className="field-label">Full name<input type="text" value={studentName} onChange={(event) => setStudentName(event.target.value)} required /></label>
+                <label className="field-label">Username<input type="text" value={studentUsername} onChange={(event) => setStudentUsername(event.target.value)} required minLength={3} /></label>
+                <label className="field-label">Password<input type="password" value={studentPassword} onChange={(event) => setStudentPassword(event.target.value)} required minLength={8} /></label>
+                {studentFormError && <p className="auth-error" role="alert">{studentFormError}</p>}
+                <button className="secondary-button" type="submit">Add Student</button>
+              </form>
+            </article>
+            <article className="panel-card">
+              <p className="eyebrow">Enrolled Students</p>
               <div className="records-list">
-                {records.length ? records.slice().reverse().map((record) => <article className="record-card" key={record.id}><small>{record.role} / {record.module} / {record.stage} / {new Date(record.createdAt).toLocaleString()} {record.syncedAt ? "/ synced" : "/ offline"}</small><p>{record.text}</p></article>) : <p className="muted">No saved progress on this device yet.</p>}
+                {sectionStudents.length ? sectionStudents.map((student) => (
+                  <article className="record-card" key={student.id}>
+                    <small>{student.username}</small>
+                    <p>{student.name}</p>
+                  </article>
+                )) : <p className="muted">No students enrolled yet.</p>}
               </div>
-              <button className="secondary-button" onClick={() => {
-                const blob = new Blob([JSON.stringify(records, null, 2)], { type: "application/json" });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement("a");
-                link.href = url;
-                link.download = "tuklas-saved-progress.json";
-                link.click();
-                URL.revokeObjectURL(url);
-              }}>Export JSON</button>
             </article>
           </section>
         )}
       </main>
 
       <nav className="bottom-nav" aria-label="Primary navigation">
-        {(["home", "modules", "settings"] as Screen[]).map((item) => (
-          <button key={item} className={screen === item || (screen === "detail" && item === "modules") ? "active" : ""} onClick={() => goTo(item)}>
-            {item === "modules" ? "Lessons" : item[0].toUpperCase() + item.slice(1)}
+        {(isTeacherPreview ? (["home", "classes", "settings"] as Screen[]) : (["home", "modules", "settings"] as Screen[])).map((item) => (
+          <button
+            key={item}
+            className={screen === item || (screen === "detail" && item === "modules") || (screen === "section" && item === "classes") ? "active" : ""}
+            onClick={() => goTo(item)}
+          >
+            {item === "modules" ? "Lessons" : item === "classes" ? "Classes" : item[0].toUpperCase() + item.slice(1)}
           </button>
         ))}
       </nav>

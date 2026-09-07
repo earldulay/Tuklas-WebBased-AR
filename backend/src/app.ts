@@ -6,6 +6,7 @@ import { ZodError } from "zod";
 import { authRouter } from "./routes/auth.js";
 import { healthRouter } from "./routes/health.js";
 import { modulesRouter } from "./routes/modules.js";
+import { sectionsRouter } from "./routes/sections.js";
 import { syncRouter } from "./routes/sync.js";
 
 export function createApp() {
@@ -34,6 +35,7 @@ export function createApp() {
 
   app.use("/api/health", healthRouter);
   app.use("/api/auth", authRouter);
+  app.use("/api/sections", sectionsRouter);
   app.use("/api/modules", modulesRouter);
   app.use("/api/sync", syncRouter);
 

@@ -4,7 +4,7 @@ export type ViewMode = "ar" | "fallback";
 
 export type Stage = "Predict" | "Observe" | "Explain" | "Reflection";
 
-export type Screen = "home" | "modules" | "detail" | "observe" | "explain" | "result" | "settings";
+export type Screen = "home" | "modules" | "detail" | "observe" | "explain" | "result" | "settings" | "classes" | "section";
 
 export interface LearningModule {
   id: string;
@@ -41,7 +41,7 @@ export interface AuthUser {
   username: string;
   role: Role;
   name: string;
-  section: string | null;
+  sectionId: string | null;
   createdAt: string;
 }
 
@@ -53,4 +53,15 @@ export interface ClassProgressRecord {
   mode: ViewMode;
   text: string;
   createdAt: string;
+}
+
+export interface Section {
+  id: string;
+  name: string;
+  teacherId: string;
+  createdAt: string;
+}
+
+export interface SectionSummary extends Section {
+  studentCount: number;
 }

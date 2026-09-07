@@ -1,5 +1,5 @@
 import { clearSession, getToken } from "./auth";
-import type { ActivityRecord, AuthUser, ClassProgressRecord, LearningModule } from "../types/domain";
+import type { ActivityRecord, AuthUser, ClassProgressRecord, LearningModule, Section, SectionSummary } from "../types/domain";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
 
@@ -56,17 +56,28 @@ export function registerTeacher(username: string, password: string, name: string
   });
 }
 
-export function createStudent(username: string, password: string, name: string, section: string) {
-  return request<{ user: AuthUser }>("/auth/students", {
+export function fetchClassProgress() {
+  return request<{ students: AuthUser[]; records: ClassProgressRecord[] }>("/auth/class-progress");
+}
+
+export function createSection(name: string) {
+  return request<{ section: Section }>("/sections", {
     method: "POST",
-    body: JSON.stringify({ username, password, name, section: section || undefined }),
+    body: JSON.stringify({ name }),
   });
 }
 
-export function listStudents() {
-  return request<{ students: AuthUser[] }>("/auth/students");
+export function listSections() {
+  return request<{ sections: SectionSummary[] }>("/sections");
 }
 
-export function fetchClassProgress() {
-  return request<{ students: AuthUser[]; records: ClassProgressRecord[] }>("/auth/class-progress");
+export function getSection(sectionId: string) {
+  return request<{ section: Section; students: AuthUser[] }>(`/sections/${sectionId}`);
+}
+
+export function createSectionStudent(sectionId: string, username: string, password: string, name: string) {
+  return request<{ user: AuthUser }>(`/sections/${sectionId}/students`, {
+    method: "POST",
+    body: JSON.stringify({ username, password, name }),
+  });
 }
