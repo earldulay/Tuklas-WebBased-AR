@@ -32,6 +32,7 @@ export function ScienceScene({ acceleration, force, mass, viewMode, onArReady, o
     mount.appendChild(renderer.domElement);
 
     const trackedRoot = new THREE.Group();
+    trackedRoot.scale.setScalar(viewMode === "ar" ? 0.18 : 1);
     scene.add(trackedRoot);
 
     const light = new THREE.HemisphereLight(0xffffff, 0x24324d, 2.5);
@@ -58,6 +59,7 @@ export function ScienceScene({ acceleration, force, mass, viewMode, onArReady, o
     let arSource: ArToolkitSource | null = null;
     let arContext: ArToolkitContext | null = null;
     let cancelled = false;
+    let markerVisible = false;
 
     const render = () => {
       frame += 0.012;
@@ -65,6 +67,10 @@ export function ScienceScene({ acceleration, force, mass, viewMode, onArReady, o
       cart.position.y = -0.06 + mass * 0.015;
       if (viewMode === "ar" && arSource?.ready && arContext) {
         arContext.update(arSource.domElement);
+        if (trackedRoot.visible !== markerVisible) {
+          markerVisible = trackedRoot.visible;
+          onArStatus?.(markerVisible ? "Tuklas marker detected." : "Looking for the Tuklas marker...");
+        }
       }
       renderer.render(scene, camera);
       animationId = requestAnimationFrame(render);
@@ -101,6 +107,7 @@ export function ScienceScene({ acceleration, force, mass, viewMode, onArReady, o
           const context = new THREEx.ArToolkitContext({
             cameraParametersUrl,
             detectionMode: "mono",
+            patternRatio: 0.5,
           });
           arSource = source;
           arContext = context;
@@ -121,7 +128,7 @@ export function ScienceScene({ acceleration, force, mass, viewMode, onArReady, o
                 camera.projectionMatrix.copy(context.getProjectionMatrix());
                 resize();
                 onArReady?.(true);
-                onArStatus?.("AR tracking is live. Point the camera at the Tuklas marker.");
+                onArStatus?.("Looking for the Tuklas marker...");
               });
             },
             (error: { message?: string }) => {

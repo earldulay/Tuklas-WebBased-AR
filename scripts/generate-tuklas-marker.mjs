@@ -41,8 +41,8 @@ const pattern = orientations
 
 writeFileSync("frontend/public/assets/tuklas-marker.patt", `${pattern}\n`);
 
-const cellSize = 26;
-const offset = 112;
+const cellSize = 16;
+const offset = 192;
 const blocks = rows
   .flatMap((row, y) =>
     [...row].flatMap((cell, x) =>
@@ -57,10 +57,10 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" role=
   <title id="title">Tuklas AR reusable marker</title>
   <desc id="desc">A black and white square marker trained for the Tuklas AR Science Lab prototype.</desc>
   <rect width="640" height="640" fill="#fff"/>
-  <rect x="24" y="24" width="592" height="592" fill="#111"/>
-  <rect x="112" y="112" width="416" height="416" fill="#fff"/>
+  <rect x="64" y="64" width="512" height="512" fill="#111"/>
+  <rect x="192" y="192" width="256" height="256" fill="#fff"/>
 ${blocks}
-  <text x="320" y="572" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="900" fill="#111">TUKLAS AR</text>
+  <text x="320" y="620" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="900" fill="#111">TUKLAS AR</text>
 </svg>
 `;
 
