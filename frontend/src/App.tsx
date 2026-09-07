@@ -562,7 +562,7 @@ function App() {
               </div>
               <div className={`ar-frame ${viewMode === "fallback" ? "fallback-mode" : ""}`}>
                 {viewMode === "ar" && <video ref={videoRef} className="camera-video" muted playsInline autoPlay />}
-                <ActivityVisual moduleId={activeModule.id} controlA={controlA} controlB={controlB} trialPulse={trialPulse} />
+                {viewMode === "fallback" && <ActivityVisual moduleId={activeModule.id} controlA={controlA} controlB={controlB} trialPulse={trialPulse} />}
               </div>
               {viewMode === "ar" && (
                 <>
