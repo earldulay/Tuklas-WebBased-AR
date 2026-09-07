@@ -1,10 +1,9 @@
-import type { ActivityRecord, ProgressState } from "../types/domain";
+import type { ActivityRecord } from "../types/domain";
 
 const DB_NAME = "tuklas-poe";
 const DB_VERSION = 1;
 const RECORD_STORE = "records";
 const RECORDS_KEY = "tuklas-records";
-const PROGRESS_KEY = "tuklas-progress";
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 
@@ -29,15 +28,12 @@ function openDb(): Promise<IDBDatabase | null> {
   return dbPromise;
 }
 
-export function loadProgress(): ProgressState {
-  return JSON.parse(localStorage.getItem(PROGRESS_KEY) || "{}") as ProgressState;
-}
+// The device-local store holds records for every account that has ever
+// logged in on this device (useful on a shared classroom tablet, where the
+// same browser sees several students). Every read/write below is scoped to
+// a single userId so one account's progress can never leak into another's.
 
-export function saveProgress(progress: ProgressState) {
-  localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
-}
-
-export async function loadRecords(): Promise<ActivityRecord[]> {
+async function loadAllRecords(): Promise<ActivityRecord[]> {
   const fallback = JSON.parse(localStorage.getItem(RECORDS_KEY) || "[]") as ActivityRecord[];
   const db = await openDb();
   if (!db) return fallback;
@@ -49,22 +45,7 @@ export async function loadRecords(): Promise<ActivityRecord[]> {
   });
 }
 
-export async function saveRecord(record: ActivityRecord) {
-  const current = await loadRecords();
-  const next = [...current.filter((item) => item.id !== record.id), record];
-  localStorage.setItem(RECORDS_KEY, JSON.stringify(next));
-
-  const db = await openDb();
-  if (!db) return;
-
-  await new Promise<void>((resolve) => {
-    const request = db.transaction(RECORD_STORE, "readwrite").objectStore(RECORD_STORE).put(record);
-    request.onsuccess = () => resolve();
-    request.onerror = () => resolve();
-  });
-}
-
-export async function replaceRecords(records: ActivityRecord[]) {
+async function writeAllRecords(records: ActivityRecord[]) {
   localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
   const db = await openDb();
   if (!db) return;
@@ -79,14 +60,24 @@ export async function replaceRecords(records: ActivityRecord[]) {
   });
 }
 
-export async function clearRecords() {
-  localStorage.setItem(RECORDS_KEY, "[]");
-  const db = await openDb();
-  if (!db) return;
+export async function loadRecords(userId: string): Promise<ActivityRecord[]> {
+  const all = await loadAllRecords();
+  return all.filter((record) => record.userId === userId);
+}
 
-  await new Promise<void>((resolve) => {
-    const request = db.transaction(RECORD_STORE, "readwrite").objectStore(RECORD_STORE).clear();
-    request.onsuccess = () => resolve();
-    request.onerror = () => resolve();
-  });
+export async function saveRecord(record: ActivityRecord) {
+  const all = await loadAllRecords();
+  const next = [...all.filter((item) => item.id !== record.id), record];
+  await writeAllRecords(next);
+}
+
+export async function replaceRecords(userId: string, records: ActivityRecord[]) {
+  const all = await loadAllRecords();
+  const others = all.filter((item) => item.userId !== userId);
+  await writeAllRecords([...others, ...records]);
+}
+
+export async function clearRecords(userId: string) {
+  const all = await loadAllRecords();
+  await writeAllRecords(all.filter((item) => item.userId !== userId));
 }

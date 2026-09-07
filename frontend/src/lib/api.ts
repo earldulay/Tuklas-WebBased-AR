@@ -42,6 +42,10 @@ export function syncRecords(records: ActivityRecord[]) {
   });
 }
 
+export function fetchMyRecords() {
+  return request<{ records: ActivityRecord[] }>("/sync/mine");
+}
+
 export function login(username: string, password: string) {
   return request<{ token: string; user: AuthUser }>("/auth/login", {
     method: "POST",
@@ -72,12 +76,19 @@ export function listSections() {
 }
 
 export function getSection(sectionId: string) {
-  return request<{ section: Section; students: AuthUser[] }>(`/sections/${sectionId}`);
+  return request<{ section: Section; students: AuthUser[]; records: ClassProgressRecord[] }>(`/sections/${sectionId}`);
 }
 
 export function createSectionStudent(sectionId: string, username: string, password: string, name: string) {
   return request<{ user: AuthUser }>(`/sections/${sectionId}/students`, {
     method: "POST",
     body: JSON.stringify({ username, password, name }),
+  });
+}
+
+export function resetStudentProgress(studentId: string, moduleId?: string) {
+  return request<{ deleted: number }>(`/auth/students/${studentId}/reset-progress`, {
+    method: "POST",
+    body: JSON.stringify(moduleId ? { moduleId } : {}),
   });
 }

@@ -81,7 +81,27 @@ sectionsRouter.get("/:id", async (request, response, next) => {
       orderBy: { createdAt: "desc" },
     });
 
-    response.json({ section, students: students.map(toPublicUser) });
+    const studentIds = students.map((student) => student.id);
+    const records = studentIds.length
+      ? await prisma.activityRecord.findMany({
+          where: { userId: { in: studentIds } },
+          orderBy: { createdAt: "desc" },
+        })
+      : [];
+
+    response.json({
+      section,
+      students: students.map(toPublicUser),
+      records: records.map((record) => ({
+        id: record.id,
+        userId: record.userId,
+        moduleId: record.moduleId,
+        stage: record.stage,
+        mode: record.mode,
+        text: record.text,
+        createdAt: record.createdAt,
+      })),
+    });
   } catch (error) {
     next(error);
   }

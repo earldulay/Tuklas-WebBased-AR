@@ -1314,6 +1314,31 @@ input[type="range"] {
   background: #eaf2ff;
 }
 
+.locked-notice {
+  border-left: 5px solid var(--gold);
+}
+
+.locked-notice textarea {
+  margin-top: 10px;
+}
+
+.student-progress-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.student-module-row {
+  align-items: center;
+}
+
+.student-module-row small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
 .disclosure-toggle {
   width: 100%;
   border: 0;

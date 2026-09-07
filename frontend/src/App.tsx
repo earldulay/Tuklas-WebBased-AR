@@ -1,13 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ApiError, createSection, createSectionStudent, fetchClassProgress, fetchModules, getSection, listSections, login as apiLogin, registerTeacher, syncRecords } from "./lib/api";
+import { ApiError, createSection, createSectionStudent, fetchClassProgress, fetchModules, fetchMyRecords, getSection, listSections, login as apiLogin, registerTeacher, resetStudentProgress, syncRecords } from "./lib/api";
 import { clearSession, getStoredUser, setSession } from "./lib/auth";
-import { clearRecords, loadProgress, loadRecords, replaceRecords, saveProgress, saveRecord } from "./lib/storage";
+import { clearRecords, loadRecords, replaceRecords, saveRecord } from "./lib/storage";
 import { modules as fallbackModules } from "./data/modules";
-import type { ActivityRecord, AuthUser, ClassProgressRecord, LearningModule, ProgressState, Role, Screen, Section, SectionSummary, Stage, ViewMode } from "./types/domain";
+import type { ActivityRecord, AuthUser, ClassProgressRecord, LearningModule, Role, Screen, Section, SectionSummary, Stage, ViewMode } from "./types/domain";
 import { ScienceScene } from "./components/ScienceScene";
 import { Activity, CircuitBoard, Download, Earth, Microscope, Printer, Thermometer, type LucideIcon } from "lucide-react";
 
-const progressKeys = ["prediction", "observation", "explanation", "result"] as const;
+// A module counts as "done" once all three of these stages have a
+// submitted record. Reflection is intentionally excluded - it's an
+// optional bonus, not part of the locked Predict/Observe/Explain flow.
+const REQUIRED_STAGES: Stage[] = ["Predict", "Observe", "Explain"];
+
+function stagesFor(recordsList: ActivityRecord[], moduleId: string): Set<Stage> {
+  return new Set(recordsList.filter((record) => record.moduleId === moduleId).map((record) => record.stage));
+}
 const offlineAssets = [
   "/",
   "/index.html",
@@ -237,6 +244,7 @@ function ActivityVisual({
 function App() {
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const role: Role | "" = user?.role ?? "";
+  const isTeacherPreview = role === "teacher";
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -256,6 +264,8 @@ function App() {
   const [activeSection, setActiveSection] = useState<Section | null>(null);
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [sectionStudents, setSectionStudents] = useState<AuthUser[]>([]);
+  const [sectionRecords, setSectionRecords] = useState<ClassProgressRecord[]>([]);
+  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const [newSectionName, setNewSectionName] = useState("");
   const [sectionFormError, setSectionFormError] = useState("");
   const [screen, setScreen] = useState<Screen>("home");
@@ -263,11 +273,9 @@ function App() {
   const [modules, setModules] = useState<LearningModule[]>(fallbackModules);
   const [activeModule, setActiveModule] = useState<LearningModule>(fallbackModules[0]);
   const [records, setRecords] = useState<ActivityRecord[]>([]);
-  const [progress, setProgressState] = useState<ProgressState>(() => loadProgress());
   const [query, setQuery] = useState("");
   const [selectedPredictions, setSelectedPredictions] = useState<string[]>([]);
   const [predictionNote, setPredictionNote] = useState("");
-  const [predictionReview, setPredictionReview] = useState("");
   const [evidence, setEvidence] = useState("");
   const [explanation, setExplanation] = useState("");
   const [reflection, setReflection] = useState("");
@@ -287,26 +295,34 @@ function App() {
     () => modules.filter((item) => `${item.title} ${item.subtitle} ${item.quarter}`.toLowerCase().includes(query.toLowerCase())),
     [modules, query],
   );
-  const progressCount = progressKeys.filter((key) => progress[activeModule.id]?.[key]).length;
-  const percent = Math.round((progressCount / progressKeys.length) * 100);
+  // A student's real progress, derived straight from their own submitted
+  // records (local + synced) instead of a separate, driftable flag store.
+  // Once a stage has a submitted record, it's locked against re-access for
+  // students (a teacher can undo this - see "Reset Progress" in Classes).
+  const activeModuleStages = stagesFor(records, activeModule.id);
+  const predictLocked = !isTeacherPreview && activeModuleStages.has("Predict");
+  const observeLocked = !isTeacherPreview && activeModuleStages.has("Observe");
+  const explainLocked = !isTeacherPreview && activeModuleStages.has("Explain");
+  const predictionReview = records.find((record) => record.moduleId === activeModule.id && record.stage === "Predict")?.text || "";
+  const existingExplainText = records.find((record) => record.moduleId === activeModule.id && record.stage === "Explain")?.text || "";
+  const percent = Math.round((REQUIRED_STAGES.filter((stage) => activeModuleStages.has(stage)).length / REQUIRED_STAGES.length) * 100);
   const moduleProgress = modules.map((module) => {
-    const completed = progressKeys.filter((key) => progress[module.id]?.[key]).length;
-    return { module, completed, percent: Math.round((completed / progressKeys.length) * 100) };
+    const stages = stagesFor(records, module.id);
+    const completed = REQUIRED_STAGES.filter((stage) => stages.has(stage)).length;
+    return { module, completed, percent: Math.round((completed / REQUIRED_STAGES.length) * 100) };
   });
   const overallCompleted = moduleProgress.reduce((total, item) => total + item.completed, 0);
-  const overallTotal = modules.length * progressKeys.length;
+  const overallTotal = modules.length * REQUIRED_STAGES.length;
   const overallPercent = overallTotal ? Math.round((overallCompleted / overallTotal) * 100) : 0;
   const observationModel = getObservationModel(activeModule.id, controlA, controlB);
-  const isTeacherPreview = role === "teacher";
   const classSummary = useMemo(() => {
-    const stagesPerModule = 4; // Predict, Observe, Explain, Reflection
     return students.map((student) => {
       const studentRecords = classRecords.filter((record) => record.userId === student.id);
       const completedStages = modules.reduce((sum, module) => {
         const stages = new Set(studentRecords.filter((record) => record.moduleId === module.id).map((record) => record.stage));
-        return sum + stages.size;
+        return sum + REQUIRED_STAGES.filter((stage) => stages.has(stage)).length;
       }, 0);
-      const totalPossible = modules.length * stagesPerModule;
+      const totalPossible = modules.length * REQUIRED_STAGES.length;
       return {
         student,
         recordCount: studentRecords.length,
@@ -316,9 +332,40 @@ function App() {
   }, [students, classRecords, modules]);
 
   useEffect(() => {
-    loadRecords().then(setRecords);
     fetchModules().then(setModules).catch(() => undefined);
   }, []);
+
+  // Records are scoped to whichever account is logged in - reload (or
+  // clear) whenever the account changes, so switching users on a shared
+  // device never shows the previous student's progress.
+  useEffect(() => {
+    if (!user) {
+      setRecords([]);
+      return;
+    }
+    loadRecords(user.id).then(setRecords);
+  }, [user]);
+
+  // Pulls this account's authoritative record set from the server and
+  // reconciles it with local storage - the mechanism that actually makes a
+  // teacher's progress reset take effect on the student's own device. Runs
+  // on reconnect/login and whenever the student revisits Home or Lessons,
+  // which is right before they'd hit a locked screen.
+  useEffect(() => {
+    if (!online || !user) return;
+    if (screen !== "home" && screen !== "modules") return;
+
+    fetchMyRecords()
+      .then((result) => {
+        setRecords((current) => {
+          const unsyncedLocal = current.filter((record) => !record.syncedAt && !result.records.some((serverRecord) => serverRecord.id === record.id));
+          const merged = [...result.records, ...unsyncedLocal];
+          replaceRecords(user.id, merged);
+          return merged;
+        });
+      })
+      .catch(() => undefined);
+  }, [online, user, screen]);
 
   useEffect(() => {
     const handleOnline = () => setOnline(true);
@@ -370,6 +417,7 @@ function App() {
         .then((result) => {
           setActiveSection(result.section);
           setSectionStudents(result.students);
+          setSectionRecords(result.records);
         })
         .catch(() => undefined);
     }
@@ -386,7 +434,6 @@ function App() {
     setTrialPulse(0);
     setExperimentTrials([]);
     setPredictionNote("");
-    setPredictionReview("");
 
     if (isTeacherPreview) {
       // Teacher Preview answers Predict and Explain correctly up front so a
@@ -472,8 +519,29 @@ function App() {
     setActiveSectionId(sectionId);
     setActiveSection(null);
     setSectionStudents([]);
+    setSectionRecords([]);
+    setExpandedStudentId(null);
     setShowAddStudent(false);
     goTo("section");
+  }
+
+  // Clears a student's own submitted records - all modules, or just one -
+  // so a locked Predict/Observe/Explain screen opens back up. The student's
+  // own device picks this up next time it reconciles with the server
+  // (see the fetchMyRecords effect above), unlocking the screen there too.
+  async function handleResetProgress(studentId: string, moduleId?: string) {
+    const confirmed = window.confirm(
+      moduleId ? "Reset this student's progress for this module? They'll be able to redo it." : "Reset ALL of this student's progress? They'll be able to redo every module.",
+    );
+    if (!confirmed) return;
+
+    try {
+      await resetStudentProgress(studentId, moduleId);
+      setSectionRecords((current) => current.filter((record) => !(record.userId === studentId && (!moduleId || record.moduleId === moduleId))));
+      showToast("Progress reset.");
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : "Could not reset progress.");
+    }
   }
 
   async function handleCreateSectionStudent(event: FormEvent) {
@@ -506,8 +574,10 @@ function App() {
   }
 
   async function addRecord(stage: Stage, text: string) {
+    if (!user) return records;
     const record: ActivityRecord = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      userId: user.id,
       role: role || "student",
       module: activeModule.title,
       moduleId: activeModule.id,
@@ -530,7 +600,7 @@ function App() {
   // and a later sync attempt (manual, reconnect, or next submission) will
   // pick them up.
   async function syncUnsyncedRecords(currentRecords: ActivityRecord[]) {
-    if (!navigator.onLine) return currentRecords;
+    if (!navigator.onLine || !user) return currentRecords;
     const unsynced = currentRecords.filter((record) => !record.syncedAt);
     if (!unsynced.length) return currentRecords;
 
@@ -539,19 +609,11 @@ function App() {
       const syncedIds = new Set(result.records.map((record) => record.id));
       const next = currentRecords.map((record) => (syncedIds.has(record.id) ? { ...record, syncedAt: new Date().toISOString() } : record));
       setRecords(next);
-      await replaceRecords(next);
+      await replaceRecords(user.id, next);
       return next;
     } catch {
       return currentRecords;
     }
-  }
-
-  function markProgress(key: (typeof progressKeys)[number]) {
-    setProgressState((current) => {
-      const next = { ...current, [activeModule.id]: { ...(current[activeModule.id] || {}), [key]: true } };
-      saveProgress(next);
-      return next;
-    });
   }
 
   async function prepareOffline() {
@@ -728,7 +790,7 @@ function App() {
                       <div>
                         <div className="row-between"><strong>{module.quarter}: {module.title}</strong><span>{modulePercent}%</span></div>
                         <div className="progress-track"><span style={{ width: `${modulePercent}%` }} /></div>
-                        <small>{completed} of {progressKeys.length} stages</small>
+                        <small>{completed} of {REQUIRED_STAGES.length} stages</small>
                       </div>
                     </div>
                   ))}
@@ -781,35 +843,42 @@ function App() {
               <p className="eyebrow">POE Steps</p>
               <div className="poe-steps">{["Predict", "Observe", "Explain"].map((label, index) => <span className={index === 0 ? "active" : ""} key={label}>{index + 1}<small>{label}</small></span>)}</div>
             </article>
-            <article className="panel-card">
-              <p className="eyebrow">Prediction Questions</p>
-              <div className="prediction-questions">
-                {activeModule.predictions.map((prediction, questionIndex) => (
-                  <fieldset className="prediction-question" key={prediction.question}>
-                    <legend><span>{questionIndex + 1}</span>{prediction.question}</legend>
-                    <div className="choice-list">
-                      {prediction.choices.map((choice) => (
-                        <label key={choice}><input type="radio" name={`prediction-${questionIndex}`} value={choice} checked={selectedPredictions[questionIndex] === choice} onChange={(event) => setSelectedPredictions((current) => { const next = [...current]; next[questionIndex] = event.target.value; return next; })} /><span>{choice}</span></label>
-                      ))}
-                    </div>
-                  </fieldset>
-                ))}
-              </div>
-              <textarea rows={3} placeholder="Why do you think so? (optional)" value={predictionNote} onChange={(event) => setPredictionNote(event.target.value)} />
-              <button className="primary-button" onClick={async () => {
-                if (activeModule.predictions.some((_, index) => !selectedPredictions[index])) return showToast("Answer all three prediction questions.");
-                const answers = activeModule.predictions.map((prediction, index) => `${index + 1}. ${prediction.question}\nAnswer: ${selectedPredictions[index]}`).join("\n\n");
-                const text = `${answers}${predictionNote.trim() ? `\n\nReasoning: ${predictionNote.trim()}` : ""}`;
-                if (!isTeacherPreview) {
-                  const next = await addRecord("Predict", text);
-                  await syncUnsyncedRecords(next);
-                  markProgress("prediction");
-                }
-                setPredictionReview(text);
-                setTrialPulse(0);
-                goTo("observe");
-              }}>Next</button>
-            </article>
+            {predictLocked ? (
+              <article className="panel-card locked-notice">
+                <p className="eyebrow">Prediction Submitted</p>
+                <p>You already submitted your prediction for this module. Ask your teacher to reset it if you need to try again.</p>
+                <textarea className="readonly-field" rows={6} value={predictionReview} readOnly aria-readonly="true" aria-label="Your submitted prediction" />
+                <button className="primary-button" onClick={() => { setTrialPulse(0); goTo("observe"); }}>Continue to Observe</button>
+              </article>
+            ) : (
+              <article className="panel-card">
+                <p className="eyebrow">Prediction Questions</p>
+                <div className="prediction-questions">
+                  {activeModule.predictions.map((prediction, questionIndex) => (
+                    <fieldset className="prediction-question" key={prediction.question}>
+                      <legend><span>{questionIndex + 1}</span>{prediction.question}</legend>
+                      <div className="choice-list">
+                        {prediction.choices.map((choice) => (
+                          <label key={choice}><input type="radio" name={`prediction-${questionIndex}`} value={choice} checked={selectedPredictions[questionIndex] === choice} onChange={(event) => setSelectedPredictions((current) => { const next = [...current]; next[questionIndex] = event.target.value; return next; })} /><span>{choice}</span></label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ))}
+                </div>
+                <textarea rows={3} placeholder="Why do you think so? (optional)" value={predictionNote} onChange={(event) => setPredictionNote(event.target.value)} />
+                <button className="primary-button" onClick={async () => {
+                  if (activeModule.predictions.some((_, index) => !selectedPredictions[index])) return showToast("Answer all three prediction questions.");
+                  const answers = activeModule.predictions.map((prediction, index) => `${index + 1}. ${prediction.question}\nAnswer: ${selectedPredictions[index]}`).join("\n\n");
+                  const text = `${answers}${predictionNote.trim() ? `\n\nReasoning: ${predictionNote.trim()}` : ""}`;
+                  if (!isTeacherPreview) {
+                    const next = await addRecord("Predict", text);
+                    await syncUnsyncedRecords(next);
+                  }
+                  setTrialPulse(0);
+                  goTo("observe");
+                }}>Next</button>
+              </article>
+            )}
           </section>
         )}
 
@@ -894,17 +963,17 @@ function App() {
                   </div>
                 )) : <p className="muted">No trials yet. Change a variable, then run a trial.</p>}
               </div>
-              <button className="primary-button" disabled={viewMode === "ar" && !cameraReady} onClick={async () => {
+              {observeLocked && <p className="teacher-preview-note">Observation already recorded for this module. Ask your teacher to reset it if you need to redo it.</p>}
+              <button className="primary-button" disabled={observeLocked || (viewMode === "ar" && !cameraReady)} onClick={async () => {
                 if (viewMode === "ar" && !cameraReady) return showToast("Start the camera before saving an AR trial.");
                 setTrialPulse((current) => current + 1);
                 setExperimentTrials((current) => [...current, getExperimentTrial()]);
                 if (!isTeacherPreview) {
                   const next = await addRecord("Observe", `Mode: ${viewMode}; ${observationModel.recordText}`);
                   await syncUnsyncedRecords(next);
-                  markProgress("observation");
                 }
               }}>Run Trial</button>
-              <button className="secondary-button" onClick={() => (isTeacherPreview || progress[activeModule.id]?.observation) ? goTo("explain") : showToast("Run at least one AR or 3D trial first.")}>Continue</button>
+              <button className="secondary-button" onClick={() => (isTeacherPreview || activeModuleStages.has("Observe")) ? goTo("explain") : showToast("Run at least one AR or 3D trial first.")}>Continue</button>
             </article>
           </section>
         )}
@@ -912,22 +981,29 @@ function App() {
         {screen === "explain" && (
           <section className="screen active">
             {isTeacherPreview && <p className="teacher-preview-note">Teacher Preview - your write-up here isn't saved as student work.</p>}
-            <article className="panel-card">
-              <p>Use your observations to explain the results.</p>
-              <label className="field-label">My predictions<textarea className="readonly-field" rows={10} value={predictionReview} readOnly aria-readonly="true" /></label>
-              <label className="field-label">Evidence from observation<textarea rows={5} placeholder="What did you observe? Include data or patterns." value={evidence} onChange={(event) => setEvidence(event.target.value)} /></label>
-              <label className="field-label">Scientific explanation<textarea rows={5} placeholder="Explain why this happened using scientific ideas." value={explanation} onChange={(event) => setExplanation(event.target.value)} /></label>
-              <button className="primary-button" onClick={async () => {
-                if (!evidence.trim() || !explanation.trim()) return showToast("Add evidence and a scientific explanation.");
-                if (!isTeacherPreview) {
-                  const next = await addRecord("Explain", `Evidence: ${evidence.trim()} / Explanation: ${explanation.trim()}`);
-                  await syncUnsyncedRecords(next);
-                  markProgress("explanation");
-                  markProgress("result");
-                }
-                goTo("result");
-              }}>Submit</button>
-            </article>
+            {explainLocked ? (
+              <article className="panel-card locked-notice">
+                <p className="eyebrow">Explanation Submitted</p>
+                <p>You already submitted your explanation for this module. Ask your teacher to reset it if you need to try again.</p>
+                <textarea className="readonly-field" rows={6} value={existingExplainText} readOnly aria-readonly="true" aria-label="Your submitted explanation" />
+                <button className="primary-button" onClick={() => goTo("result")}>View Results</button>
+              </article>
+            ) : (
+              <article className="panel-card">
+                <p>Use your observations to explain the results.</p>
+                <label className="field-label">My predictions<textarea className="readonly-field" rows={10} value={predictionReview} readOnly aria-readonly="true" /></label>
+                <label className="field-label">Evidence from observation<textarea rows={5} placeholder="What did you observe? Include data or patterns." value={evidence} onChange={(event) => setEvidence(event.target.value)} /></label>
+                <label className="field-label">Scientific explanation<textarea rows={5} placeholder="Explain why this happened using scientific ideas." value={explanation} onChange={(event) => setExplanation(event.target.value)} /></label>
+                <button className="primary-button" onClick={async () => {
+                  if (!evidence.trim() || !explanation.trim()) return showToast("Add evidence and a scientific explanation.");
+                  if (!isTeacherPreview) {
+                    const next = await addRecord("Explain", `Evidence: ${evidence.trim()} / Explanation: ${explanation.trim()}`);
+                    await syncUnsyncedRecords(next);
+                  }
+                  goTo("result");
+                }}>Submit</button>
+              </article>
+            )}
           </section>
         )}
 
@@ -964,7 +1040,7 @@ function App() {
             <article className="panel-card offline-checklist"><p className="eyebrow">Offline Setup</p><ol><li>Open this HTTPS app while connected.</li><li>Tap Prepare for Offline Use.</li><li>Add the app to the home screen.</li><li>Reopen in airplane mode and run one trial.</li></ol></article>
             {!isTeacherPreview && (
               <article className="panel-card teacher-tools">
-                <div className="row-between"><h2>Saved Work</h2><button className="text-button compact-button" onClick={async () => { await clearRecords(); setRecords([]); showToast("Saved progress cleared."); }}>Clear</button></div>
+                <div className="row-between"><h2>Saved Work</h2><button className="text-button compact-button" onClick={async () => { if (!user) return; await clearRecords(user.id); setRecords([]); showToast("Saved progress cleared."); }}>Clear</button></div>
                 <div className="records-list">
                   {records.length ? records.slice().reverse().map((record) => <article className="record-card" key={record.id}><small>{record.role} / {record.module} / {record.stage} / {new Date(record.createdAt).toLocaleString()} {record.syncedAt ? "/ synced" : "/ offline"}</small><p>{record.text}</p></article>) : <p className="muted">No saved progress on this device yet.</p>}
                 </div>
@@ -1030,12 +1106,40 @@ function App() {
             <article className="panel-card">
               <p className="eyebrow">Enrolled Students</p>
               <div className="records-list">
-                {sectionStudents.length ? sectionStudents.map((student) => (
-                  <article className="record-card" key={student.id}>
-                    <small>{student.username}</small>
-                    <p>{student.name}</p>
-                  </article>
-                )) : <p className="muted">No students enrolled yet.</p>}
+                {sectionStudents.length ? sectionStudents.map((student) => {
+                  const studentRecords = sectionRecords.filter((record) => record.userId === student.id);
+                  const isExpanded = expandedStudentId === student.id;
+                  return (
+                    <article className="record-card" key={student.id}>
+                      <button
+                        type="button"
+                        className="row-between disclosure-toggle"
+                        onClick={() => setExpandedStudentId(isExpanded ? null : student.id)}
+                        aria-expanded={isExpanded}
+                      >
+                        <span><small>{student.username}</small><p>{student.name}</p></span>
+                        <span className={`disclosure-chevron ${isExpanded ? "open" : ""}`} aria-hidden="true">&gt;</span>
+                      </button>
+                      {isExpanded && (
+                        <div className="student-progress-panel">
+                          {modules.map((module) => {
+                            const stages = new Set(studentRecords.filter((record) => record.moduleId === module.id).map((record) => record.stage));
+                            const done = REQUIRED_STAGES.filter((stage) => stages.has(stage)).length;
+                            return (
+                              <div className="row-between student-module-row" key={module.id}>
+                                <small>{module.title} - {done}/{REQUIRED_STAGES.length} stages</small>
+                                {done > 0 && <button type="button" className="text-button compact-button" onClick={() => handleResetProgress(student.id, module.id)}>Reset</button>}
+                              </div>
+                            );
+                          })}
+                          {studentRecords.length > 0 && (
+                            <button type="button" className="secondary-button" onClick={() => handleResetProgress(student.id)}>Reset All Progress</button>
+                          )}
+                        </div>
+                      )}
+                    </article>
+                  );
+                }) : <p className="muted">No students enrolled yet.</p>}
               </div>
             </article>
           </section>

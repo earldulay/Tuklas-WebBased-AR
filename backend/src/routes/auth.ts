@@ -99,6 +99,36 @@ authRouter.get("/me", requireAuth, async (request, response, next) => {
   }
 });
 
+const resetProgressSchema = z.object({
+  moduleId: z.string().min(1).optional(),
+});
+
+// Lets a teacher clear a student's own submitted activity records (all
+// modules, or one specific module) so a locked Predict/Observe/Explain
+// screen opens back up for a genuine redo - e.g. an honest mistake.
+authRouter.post("/students/:studentId/reset-progress", requireAuth, requireRole("teacher"), async (request, response, next) => {
+  if (!requireDatabase(response)) return;
+
+  try {
+    const student = await prisma.user.findFirst({
+      where: { id: request.params.studentId, createdById: request.user!.sub },
+    });
+    if (!student) {
+      response.status(404).json({ error: "Student not found." });
+      return;
+    }
+
+    const payload = resetProgressSchema.parse(request.body ?? {});
+    const result = await prisma.activityRecord.deleteMany({
+      where: payload.moduleId ? { userId: student.id, moduleId: payload.moduleId } : { userId: student.id },
+    });
+
+    response.json({ deleted: result.count });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // A teacher's class dashboard: their roster plus every synced activity
 // record belonging to those students, so the frontend can compute
 // per-student, per-module progress without one request per student.

@@ -20,6 +20,41 @@ const syncSchema = z.object({
 
 export const syncRouter = Router();
 
+// Lets the client pull back its own authoritative record state - used to
+// reconcile local storage after a teacher resets progress, or to restore
+// history on a device that never had it locally.
+syncRouter.get("/mine", requireAuth, async (request, response, next) => {
+  if (!hasDatabaseUrl()) {
+    response.json({ records: [] });
+    return;
+  }
+
+  try {
+    const records = await prisma.activityRecord.findMany({
+      where: { userId: request.user!.sub },
+      orderBy: { createdAt: "asc" },
+      include: { module: { select: { title: true } } },
+    });
+
+    response.json({
+      records: records.map((record) => ({
+        id: record.id,
+        userId: record.userId,
+        role: record.role,
+        module: record.module.title,
+        moduleId: record.moduleId,
+        mode: record.mode,
+        stage: record.stage,
+        text: record.text,
+        createdAt: record.createdAt.toISOString(),
+        syncedAt: record.syncedAt.toISOString(),
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 syncRouter.post("/", requireAuth, async (request, response, next) => {
   if (!hasDatabaseUrl()) {
     response.status(503).json({ error: "DATABASE_URL is required before syncing records." });

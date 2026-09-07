@@ -24,6 +24,7 @@ export interface LearningModule {
 
 export interface ActivityRecord {
   id: string;
+  userId: string;
   role: Role;
   module: string;
   moduleId: string;
@@ -33,8 +34,6 @@ export interface ActivityRecord {
   createdAt: string;
   syncedAt?: string;
 }
-
-export type ProgressState = Record<string, Partial<Record<"prediction" | "observation" | "explanation" | "result", boolean>>>;
 
 export interface AuthUser {
   id: string;
