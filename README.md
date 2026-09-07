@@ -86,7 +86,7 @@ Open `http://localhost:5173`.
 ## Current Features
 
 - Student and teacher/demo entry modes
-- Six-module POE activity library
+- Five-experiment POE activity library
 - Marker-based AR mode foundation with AR.js dependency loaded for the observation view
 - Three.js-powered interactive 3D fallback scene
 - Local saved activity records through IndexedDB

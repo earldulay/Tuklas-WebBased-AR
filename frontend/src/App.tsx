@@ -37,18 +37,9 @@ interface ObservationModel {
   recordText: string;
 }
 
-interface MotionTrial {
+interface ExperimentTrial {
   id: number;
-  force: number;
-  mass: number;
-  acceleration: number;
-  distance: number;
-}
-
-function effectLevel(value: number) {
-  if (value < 3) return "Low";
-  if (value < 7) return "Moderate";
-  return "High";
+  values: string[];
 }
 
 function getObservationModel(moduleId: string, controlA: number, controlB: number): ObservationModel {
@@ -68,63 +59,53 @@ function getObservationModel(moduleId: string, controlA: number, controlB: numbe
   }
 
   if (moduleId === "materials") {
-    const evidence = controlA + controlB >= 7 ? "Gas or precipitate visible" : "No strong new-substance evidence";
+    const gas = Math.min(controlA, controlB) * 25;
+    const leftover = controlA === controlB ? "None" : controlA > controlB ? "Reactant A" : "Reactant B";
     return {
-      title: "Reaction Evidence Model",
-      controlA: { label: "Heat level", min: 0, max: 5, step: 1, unit: "" },
-      controlB: { label: "Mixing level", min: 0, max: 5, step: 1, unit: "" },
+      title: "Reactant Ratio Model",
+      controlA: { label: "Reactant A", min: 1, max: 5, step: 1, unit: "scoop" },
+      controlB: { label: "Reactant B", min: 1, max: 5, step: 1, unit: "scoop" },
       readouts: [
-        { label: "Heat", value: `${controlA}/5` },
-        { label: "Mixing", value: `${controlB}/5` },
-        { label: "Evidence", value: evidence },
+        { label: "Reactant A", value: `${controlA} scoop` },
+        { label: "Reactant B", value: `${controlB} scoop` },
+        { label: "Gas produced", value: `${gas} mL` },
+        { label: "Left over", value: leftover },
       ],
-      recordText: `Heat level: ${controlA}/5; Mixing level: ${controlB}/5; Evidence: ${evidence}`,
+      recordText: `Reactant A: ${controlA} scoop; Reactant B: ${controlB} scoop; Gas: ${gas} mL; Left over: ${leftover}`,
     };
   }
 
   if (moduleId === "life") {
-    const traitEffect = effectLevel(controlA + controlB);
+    const proteinOutput = Math.round((controlB / 5) * Math.max(0, 100 - controlA * 15));
     return {
-      title: "DNA and Trait Model",
-      controlA: { label: "DNA changes", min: 0, max: 5, step: 1, unit: "" },
-      controlB: { label: "Expression strength", min: 1, max: 5, step: 1, unit: "" },
+      title: "DNA to Protein Model",
+      controlA: { label: "Changed bases", min: 0, max: 5, step: 1, unit: "" },
+      controlB: { label: "Gene activity", min: 1, max: 5, step: 1, unit: "" },
       readouts: [
         { label: "Changed bases", value: String(controlA) },
-        { label: "Expression", value: `${controlB}/5` },
-        { label: "Trait effect", value: traitEffect },
+        { label: "Gene activity", value: `${controlB}/5` },
+        { label: "Functional protein", value: `${proteinOutput}%` },
       ],
-      recordText: `DNA changes: ${controlA}; Expression strength: ${controlB}/5; Trait effect: ${traitEffect}`,
+      recordText: `Changed bases: ${controlA}; Gene activity: ${controlB}/5; Functional protein: ${proteinOutput}%`,
     };
   }
 
   if (moduleId === "earth-space") {
-    const daylight = 12 + Math.round(Math.cos((controlA * Math.PI) / 180) * controlB) / 2;
+    const angle = (controlB * Math.PI) / 6;
+    const solarDeclination = controlA * Math.cos(angle);
+    const daylight = 12 + solarDeclination / 7.5;
+    const season = solarDeclination > 8 ? "Northern summer" : solarDeclination < -8 ? "Northern winter" : "Equinox period";
     return {
-      title: "Earth-Sun Pattern Model",
+      title: "Seasons and Daylight Model",
       controlA: { label: "Earth tilt", min: 0, max: 45, step: 5, unit: "deg" },
-      controlB: { label: "Sun angle", min: 0, max: 8, step: 1, unit: "" },
+      controlB: { label: "Orbit position", min: 0, max: 11, step: 1, unit: "month" },
       readouts: [
         { label: "Tilt", value: `${controlA} deg` },
-        { label: "Sun angle", value: `${controlB}/8` },
+        { label: "Orbit position", value: `${controlB + 1}/12` },
+        { label: "Season", value: season },
         { label: "Daylight", value: `about ${daylight.toFixed(1)} h` },
       ],
-      recordText: `Earth tilt: ${controlA} deg; Sun angle: ${controlB}/8; Daylight pattern: about ${daylight.toFixed(1)} h`,
-    };
-  }
-
-  if (moduleId === "ecosystems") {
-    const consumers = Math.round(controlA * (1 - controlB / 12));
-    const stability = consumers >= 55 ? "Stable" : consumers >= 30 ? "At risk" : "Disrupted";
-    return {
-      title: "Food Web Energy Model",
-      controlA: { label: "Producers", min: 20, max: 100, step: 10, unit: "%" },
-      controlB: { label: "Consumer pressure", min: 0, max: 8, step: 1, unit: "" },
-      readouts: [
-        { label: "Producers", value: `${controlA}%` },
-        { label: "Pressure", value: `${controlB}/8` },
-        { label: "Consumers", value: stability },
-      ],
-      recordText: `Producer population: ${controlA}%; Consumer pressure: ${controlB}/8; Consumer response: ${consumers}% (${stability})`,
+      recordText: `Earth tilt: ${controlA} deg; Orbit position: ${controlB + 1}/12; Season: ${season}; Daylight: about ${daylight.toFixed(1)} h`,
     };
   }
 
@@ -146,8 +127,7 @@ function getObservationDefaults(moduleId: string) {
   if (moduleId === "electricity") return { controlA: 6, controlB: 3 };
   if (moduleId === "materials") return { controlA: 2, controlB: 2 };
   if (moduleId === "life") return { controlA: 1, controlB: 3 };
-  if (moduleId === "earth-space") return { controlA: 25, controlB: 4 };
-  if (moduleId === "ecosystems") return { controlA: 80, controlB: 2 };
+  if (moduleId === "earth-space") return { controlA: 25, controlB: 0 };
   return { controlA: 2, controlB: 1 };
 }
 
@@ -181,7 +161,7 @@ function ActivityVisual({
 
     return (
       <>
-        <ScienceScene acceleration={acceleration} force={controlA} mass={controlB} viewMode="fallback" />
+        <ScienceScene moduleId={moduleId} controlA={controlA} controlB={controlB} acceleration={acceleration} force={controlA} mass={controlB} viewMode="fallback" />
         <div className="track" ref={trackRef} onPointerDown={(event) => setForceFromPointer(event.clientX)} />
         <div
           className="cart draggable-cart"
@@ -219,60 +199,16 @@ function ActivityVisual({
     );
   }
 
-  if (moduleId === "electricity") {
-    const glow = Math.min(1, controlA / controlB / 4);
-    return (
-      <div className="activity-visual circuit-visual" data-pulse={trialPulse}>
-        <div className="battery"><span>{controlA} V</span></div>
-        <div className="wire-loop" />
-        <div className="resistor"><span>{controlB} ohm</span></div>
-        <div className="bulb" style={{ opacity: 0.35 + glow }} />
-      </div>
-    );
-  }
-
-  if (moduleId === "materials") {
-    const reaction = controlA + controlB;
-    return (
-      <div className="activity-visual reaction-visual" data-pulse={trialPulse}>
-        <div className="beaker">
-          <span className="liquid" style={{ height: `${38 + reaction * 4}%` }} />
-          {Array.from({ length: Math.min(10, reaction + 1) }).map((_, index) => <i key={index} />)}
-        </div>
-        <div className="sample-card">{reaction >= 7 ? "Visible evidence formed" : "Compare control and treatment"}</div>
-      </div>
-    );
-  }
-
-  if (moduleId === "life") {
-    return (
-      <div className="activity-visual dna-visual" data-pulse={trialPulse}>
-        {Array.from({ length: 8 }).map((_, index) => <span className={index < controlA ? "changed" : ""} key={index} />)}
-        <div className="trait-meter"><span style={{ width: `${Math.min(100, (controlA + controlB) * 10)}%` }} /></div>
-      </div>
-    );
-  }
-
-  if (moduleId === "earth-space") {
-    return (
-      <div className="activity-visual space-visual" data-pulse={trialPulse}>
-        <div className="sun" />
-        <div className="earth" style={{ transform: `rotate(${controlA - 20}deg)` }}><span /></div>
-        <div className="orbit-line" style={{ opacity: 0.3 + controlB / 14 }} />
-      </div>
-    );
-  }
-
   return (
-    <div className="activity-visual ecosystem-visual" data-pulse={trialPulse}>
-      <div className="producer-bar"><span style={{ height: `${controlA}%` }} /></div>
-      <div className="food-web">
-        <span>Producers</span>
-        <span>Consumers</span>
-        <span>Predators</span>
-      </div>
-      <div className="pressure-meter"><span style={{ width: `${controlB * 12.5}%` }} /></div>
-    </div>
+    <ScienceScene
+      moduleId={moduleId}
+      controlA={controlA}
+      controlB={controlB}
+      acceleration={controlA / Math.max(1, controlB)}
+      force={controlA}
+      mass={controlB}
+      viewMode="fallback"
+    />
   );
 }
 
@@ -295,10 +231,10 @@ function App() {
   const [controlA, setControlA] = useState(2);
   const [controlB, setControlB] = useState(1);
   const [trialPulse, setTrialPulse] = useState(0);
-  const [motionTrials, setMotionTrials] = useState<MotionTrial[]>([]);
+  const [experimentTrials, setExperimentTrials] = useState<ExperimentTrial[]>([]);
   const [toast, setToast] = useState("");
   const [online, setOnline] = useState(navigator.onLine);
-  const [offlineStatus, setOfflineStatus] = useState("Cache app shell, six modules, marker, and local records support.");
+  const [offlineStatus, setOfflineStatus] = useState("Cache app shell, five experiments, marker, and local records support.");
   const [deviceStatus, setDeviceStatus] = useState("Camera, WebGL, service worker, and storage readiness.");
   const [cameraStatus, setCameraStatus] = useState("Camera is off.");
   const [cameraReady, setCameraReady] = useState(false);
@@ -349,7 +285,7 @@ function App() {
     setControlA(defaults.controlA);
     setControlB(defaults.controlB);
     setTrialPulse(0);
-    if (activeModule.id !== "motion") setMotionTrials([]);
+    setExperimentTrials([]);
   }, [activeModule.id]);
 
   function showToast(message: string) {
@@ -452,20 +388,16 @@ function App() {
     }
   }
 
-  function getMotionTrial() {
-    const acceleration = controlA / controlB;
+  function getExperimentTrial() {
     return {
-      id: motionTrials.length + 1,
-      force: controlA,
-      mass: controlB,
-      acceleration,
-      distance: 0.5 * acceleration * 2 ** 2,
+      id: experimentTrials.length + 1,
+      values: observationModel.readouts.map((readout) => readout.value),
     };
   }
 
   const titles: Record<Screen, [string, string]> = {
     home: ["Workspace", "Tuklas AR Science Lab"],
-    modules: ["Lessons", "Grade 9 Science Modules"],
+    modules: ["Lessons", "Grade 9 Science Experiments"],
     detail: ["Predict", activeModule.title],
     observe: [viewMode === "ar" ? "Camera Observation" : "3D Observation", activeModule.title],
     explain: ["Explain", activeModule.title],
@@ -612,6 +544,9 @@ function App() {
               <div className={`ar-frame ${viewMode === "fallback" ? "fallback-mode" : ""}`}>
                 {viewMode === "ar" && (
                   <ScienceScene
+                    moduleId={activeModule.id}
+                    controlA={controlA}
+                    controlB={controlB}
                     acceleration={controlA / controlB}
                     force={controlA}
                     mass={controlB}
@@ -647,24 +582,20 @@ function App() {
               <div className="data-readout">
                 {observationModel.readouts.map((readout) => <span key={readout.label}>{readout.label} <strong>{readout.value}</strong></span>)}
               </div>
-              {activeModule.id === "motion" && (
-                <div className="motion-trials" aria-label="Motion trial results">
-                  <div className="motion-trial-header"><span>Trial</span><span>Force</span><span>Mass</span><span>Acceleration</span><span>2 s distance</span></div>
-                  {motionTrials.length ? motionTrials.map((trial) => (
-                    <div className="motion-trial-row" key={trial.id}>
-                      <span>{trial.id}</span>
-                      <span>{trial.force} N</span>
-                      <span>{trial.mass} kg</span>
-                      <span>{trial.acceleration.toFixed(1)} m/s^2</span>
-                      <span>{trial.distance.toFixed(1)} m</span>
-                    </div>
-                  )) : <p className="muted">No motion trials yet.</p>}
+              <div className="motion-trials" aria-label="Experiment trial results">
+                <div className="motion-trial-header" style={{ gridTemplateColumns: `48px repeat(${observationModel.readouts.length}, minmax(110px, 1fr))` }}>
+                  <span>Trial</span>{observationModel.readouts.map((readout) => <span key={readout.label}>{readout.label}</span>)}
                 </div>
-              )}
+                {experimentTrials.length ? experimentTrials.map((trial) => (
+                  <div className="motion-trial-row" style={{ gridTemplateColumns: `48px repeat(${observationModel.readouts.length}, minmax(110px, 1fr))` }} key={trial.id}>
+                    <span>{trial.id}</span>{trial.values.map((value, index) => <span key={`${trial.id}-${observationModel.readouts[index]?.label}`}>{value}</span>)}
+                  </div>
+                )) : <p className="muted">No trials yet. Change a variable, then run a trial.</p>}
+              </div>
               <button className="primary-button" disabled={viewMode === "ar" && !cameraReady} onClick={async () => {
                 if (viewMode === "ar" && !cameraReady) return showToast("Start the camera before saving an AR trial.");
                 setTrialPulse((current) => current + 1);
-                if (activeModule.id === "motion") setMotionTrials((current) => [...current, getMotionTrial()]);
+                setExperimentTrials((current) => [...current, getExperimentTrial()]);
                 await addRecord("Observe", `Mode: ${viewMode}; ${observationModel.recordText}`);
                 markProgress("observation");
               }}>Run Trial</button>
