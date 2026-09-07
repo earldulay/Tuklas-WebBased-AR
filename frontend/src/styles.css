@@ -346,6 +346,83 @@ small {
   transition: width 180ms ease;
 }
 
+.overall-progress {
+  display: grid;
+  gap: 10px;
+}
+
+.overall-percent {
+  color: var(--blue);
+  font-size: 1.7rem;
+}
+
+.overall-track {
+  height: 16px;
+}
+
+.module-progress-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.module-progress-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.module-progress-row > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.module-progress-row .row-between {
+  align-items: baseline;
+}
+
+.module-progress-row .row-between strong {
+  overflow-wrap: anywhere;
+}
+
+.module-progress-row small,
+.module-progress-row .row-between span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.marker-access,
+.marker-access-copy {
+  display: grid;
+  gap: 14px;
+}
+
+.marker-access-copy {
+  grid-template-columns: minmax(0, 1fr) 120px;
+  align-items: center;
+}
+
+.marker-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.marker-actions a {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 12px;
+  text-align: center;
+  text-decoration: none;
+}
+
 .task-card,
 .module-card,
 .settings-row {
@@ -1125,6 +1202,15 @@ input[type="range"] {
 
   .marker-panel {
     grid-template-columns: 1fr;
+  }
+
+  .marker-access-copy,
+  .marker-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .marker-access-copy .marker-preview {
+    width: 112px;
   }
 
   .landing-marker {

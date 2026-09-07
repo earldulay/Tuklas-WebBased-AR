@@ -4,7 +4,7 @@ import { clearRecords, loadProgress, loadRecords, replaceRecords, saveProgress, 
 import { modules as fallbackModules } from "./data/modules";
 import type { ActivityRecord, LearningModule, ProgressState, Role, Screen, Stage, ViewMode } from "./types/domain";
 import { ScienceScene } from "./components/ScienceScene";
-import { Activity, CircuitBoard, Earth, Microscope, Thermometer, type LucideIcon } from "lucide-react";
+import { Activity, CircuitBoard, Download, Earth, Microscope, Printer, Thermometer, type LucideIcon } from "lucide-react";
 
 const progressKeys = ["prediction", "observation", "explanation", "result"] as const;
 const offlineAssets = [
@@ -266,16 +266,14 @@ function App() {
   );
   const progressCount = progressKeys.filter((key) => progress[activeModule.id]?.[key]).length;
   const percent = Math.round((progressCount / progressKeys.length) * 100);
+  const moduleProgress = modules.map((module) => {
+    const completed = progressKeys.filter((key) => progress[module.id]?.[key]).length;
+    return { module, completed, percent: Math.round((completed / progressKeys.length) * 100) };
+  });
+  const overallCompleted = moduleProgress.reduce((total, item) => total + item.completed, 0);
+  const overallTotal = modules.length * progressKeys.length;
+  const overallPercent = overallTotal ? Math.round((overallCompleted / overallTotal) * 100) : 0;
   const observationModel = getObservationModel(activeModule.id, controlA, controlB);
-
-  const nextTask =
-    progressCount === 0
-      ? ["Start with Predict", "Choose an answer and explain your reasoning before observing."]
-      : progressCount === 1
-        ? ["Continue to Observe", "Use the camera view or 3D model, then save trial evidence."]
-        : progressCount === 2
-          ? ["Finish with Explain", "Connect your data to the science concept."]
-          : ["Review Results", "Check your saved work and write a reflection."];
 
   useEffect(() => {
     loadRecords().then(setRecords);
@@ -473,37 +471,36 @@ function App() {
       <main className="screen-stack">
         {screen === "home" && (
           <section className="screen active">
-            <article className="hero-card">
-              <p className="eyebrow">Current Activity</p>
-              <div className="module-summary">
-                <ModuleIcon moduleId={activeModule.id} />
-                <div>
-                  <h2>{activeModule.title}</h2>
-                  <p>{activeModule.task}</p>
-                  <small>{activeModule.quarter} / {activeModule.time}</small>
-                </div>
-              </div>
-            </article>
-            <article className="panel-card marker-panel">
-              <div>
-                <p className="eyebrow">Reusable Group Marker</p>
-                <h2>Print one marker per group</h2>
-                <p>Use this marker during camera observation so each group can anchor the activity in the same classroom setup.</p>
-              </div>
-              <a className="marker-preview" href="/assets/tuklas-marker.png" target="_blank" rel="noreferrer" aria-label="Open printable Tuklas AR marker"><span>TUKLAS</span></a>
-            </article>
-            <article className="panel-card">
+            <article className="panel-card overall-progress">
               <div className="row-between">
-                <h2>Progress Summary</h2>
-                <strong>{percent}% Complete</strong>
+                <div><p className="eyebrow">All Modules</p><h2>Progress Summary</h2></div>
+                <strong className="overall-percent">{overallPercent}%</strong>
               </div>
-              <div className="progress-track"><span style={{ width: `${percent}%` }} /></div>
-              <p>Completed: {progressCount} of {progressKeys.length} activity stages</p>
+              <div className="progress-track overall-track"><span style={{ width: `${overallPercent}%` }} /></div>
+              <p>{overallCompleted} of {overallTotal} activity stages completed</p>
+              <div className="module-progress-list">
+                {moduleProgress.map(({ module, completed, percent: modulePercent }) => (
+                  <div className="module-progress-row" key={module.id}>
+                    <ModuleIcon moduleId={module.id} />
+                    <div>
+                      <div className="row-between"><strong>{module.quarter}: {module.title}</strong><span>{modulePercent}%</span></div>
+                      <div className="progress-track"><span style={{ width: `${modulePercent}%` }} /></div>
+                      <small>{completed} of {progressKeys.length} stages</small>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </article>
-            <button className="task-card" onClick={() => goTo(progressCount === 0 ? "detail" : progressCount === 1 ? "observe" : progressCount === 2 ? "explain" : "result")}>
-              <div><strong>{nextTask[0]}</strong><span>{nextTask[1]}</span></div>
-              <span aria-hidden="true">&gt;</span>
-            </button>
+            <article className="panel-card marker-access">
+              <div className="marker-access-copy">
+                <div><p className="eyebrow">AR Marker</p><h2>Printable and downloadable marker</h2><p>Open the marker for printing or download a copy for offline classroom use.</p></div>
+                <a className="marker-preview" href="/assets/tuklas-marker.png" target="_blank" rel="noreferrer" aria-label="Open printable Tuklas AR marker"><span>TUKLAS</span></a>
+              </div>
+              <div className="marker-actions">
+                <a className="primary-button" href="/assets/tuklas-marker.png" target="_blank" rel="noreferrer"><Printer size={18} />Open to Print</a>
+                <a className="secondary-button" href="/assets/tuklas-marker.png" download="tuklas-ar-marker.png"><Download size={18} />Download Marker</a>
+              </div>
+            </article>
           </section>
         )}
 
