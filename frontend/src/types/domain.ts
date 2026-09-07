@@ -44,3 +44,13 @@ export interface AuthUser {
   section: string | null;
   createdAt: string;
 }
+
+export interface ClassProgressRecord {
+  id: string;
+  userId: string;
+  moduleId: string;
+  stage: Stage;
+  mode: ViewMode;
+  text: string;
+  createdAt: string;
+}

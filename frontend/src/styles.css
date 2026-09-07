@@ -1302,3 +1302,27 @@ input[type="range"] {
   font-size: 0.8rem;
   text-align: center;
 }
+
+.teacher-preview-note {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(15, 76, 154, 0.28);
+  border-radius: 8px;
+  color: var(--blue);
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: #eaf2ff;
+}
+
+.student-avatar {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(15, 76, 154, 0.22);
+  border-radius: 50%;
+  color: var(--blue);
+  font-size: 0.78rem;
+  font-weight: 800;
+  background: #eaf2ff;
+}

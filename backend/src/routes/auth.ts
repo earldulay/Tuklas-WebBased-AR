@@ -155,3 +155,40 @@ authRouter.get("/students", requireAuth, requireRole("teacher"), async (request,
     next(error);
   }
 });
+
+// A teacher's class dashboard: their roster plus every synced activity
+// record belonging to those students, so the frontend can compute
+// per-student, per-module progress without one request per student.
+authRouter.get("/class-progress", requireAuth, requireRole("teacher"), async (request, response, next) => {
+  if (!requireDatabase(response)) return;
+
+  try {
+    const students = await prisma.user.findMany({
+      where: { createdById: request.user!.sub },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const studentIds = students.map((student) => student.id);
+    const records = studentIds.length
+      ? await prisma.activityRecord.findMany({
+          where: { userId: { in: studentIds } },
+          orderBy: { createdAt: "desc" },
+        })
+      : [];
+
+    response.json({
+      students: students.map(toPublicUser),
+      records: records.map((record) => ({
+        id: record.id,
+        userId: record.userId,
+        moduleId: record.moduleId,
+        stage: record.stage,
+        mode: record.mode,
+        text: record.text,
+        createdAt: record.createdAt,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ApiError, createStudent, fetchModules, listStudents, login as apiLogin, registerTeacher, syncRecords } from "./lib/api";
+import { ApiError, createStudent, fetchClassProgress, fetchModules, login as apiLogin, registerTeacher, syncRecords } from "./lib/api";
 import { clearSession, getStoredUser, setSession } from "./lib/auth";
 import { clearRecords, loadProgress, loadRecords, replaceRecords, saveProgress, saveRecord } from "./lib/storage";
 import { modules as fallbackModules } from "./data/modules";
-import type { ActivityRecord, AuthUser, LearningModule, ProgressState, Role, Screen, Stage, ViewMode } from "./types/domain";
+import type { ActivityRecord, AuthUser, ClassProgressRecord, LearningModule, ProgressState, Role, Screen, Stage, ViewMode } from "./types/domain";
 import { ScienceScene } from "./components/ScienceScene";
 import { Activity, CircuitBoard, Download, Earth, Microscope, Printer, Thermometer, type LucideIcon } from "lucide-react";
 
@@ -246,6 +246,7 @@ function App() {
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [students, setStudents] = useState<AuthUser[]>([]);
+  const [classRecords, setClassRecords] = useState<ClassProgressRecord[]>([]);
   const [studentUsername, setStudentUsername] = useState("");
   const [studentPassword, setStudentPassword] = useState("");
   const [studentName, setStudentName] = useState("");
@@ -290,6 +291,23 @@ function App() {
   const overallTotal = modules.length * progressKeys.length;
   const overallPercent = overallTotal ? Math.round((overallCompleted / overallTotal) * 100) : 0;
   const observationModel = getObservationModel(activeModule.id, controlA, controlB);
+  const isTeacherPreview = role === "teacher";
+  const classSummary = useMemo(() => {
+    const stagesPerModule = 4; // Predict, Observe, Explain, Reflection
+    return students.map((student) => {
+      const studentRecords = classRecords.filter((record) => record.userId === student.id);
+      const completedStages = modules.reduce((sum, module) => {
+        const stages = new Set(studentRecords.filter((record) => record.moduleId === module.id).map((record) => record.stage));
+        return sum + stages.size;
+      }, 0);
+      const totalPossible = modules.length * stagesPerModule;
+      return {
+        student,
+        recordCount: studentRecords.length,
+        percent: totalPossible ? Math.round((completedStages / totalPossible) * 100) : 0,
+      };
+    });
+  }, [students, classRecords, modules]);
 
   useEffect(() => {
     loadRecords().then(setRecords);
@@ -312,8 +330,13 @@ function App() {
   }, [viewMode]);
 
   useEffect(() => {
-    if (screen === "settings" && role === "teacher") {
-      listStudents().then((result) => setStudents(result.students)).catch(() => undefined);
+    if ((screen === "home" || screen === "settings") && role === "teacher") {
+      fetchClassProgress()
+        .then((result) => {
+          setStudents(result.students);
+          setClassRecords(result.records);
+        })
+        .catch(() => undefined);
     }
   }, [screen, role]);
 
@@ -564,26 +587,54 @@ function App() {
       <main className="screen-stack">
         {screen === "home" && (
           <section className="screen active">
-            <article className="panel-card overall-progress">
-              <div className="row-between">
-                <div><p className="eyebrow">All Modules</p><h2>Progress Summary</h2></div>
-                <strong className="overall-percent">{overallPercent}%</strong>
-              </div>
-              <div className="progress-track overall-track"><span style={{ width: `${overallPercent}%` }} /></div>
-              <p>{overallCompleted} of {overallTotal} activity stages completed</p>
-              <div className="module-progress-list">
-                {moduleProgress.map(({ module, completed, percent: modulePercent }) => (
-                  <div className="module-progress-row" key={module.id}>
-                    <ModuleIcon moduleId={module.id} />
-                    <div>
-                      <div className="row-between"><strong>{module.quarter}: {module.title}</strong><span>{modulePercent}%</span></div>
-                      <div className="progress-track"><span style={{ width: `${modulePercent}%` }} /></div>
-                      <small>{completed} of {progressKeys.length} stages</small>
-                    </div>
+            {isTeacherPreview ? (
+              <>
+                <article className="panel-card overall-progress">
+                  <div className="row-between">
+                    <div><p className="eyebrow">My Class</p><h2>Class Progress</h2></div>
+                    <strong className="overall-percent">{students.length}</strong>
                   </div>
-                ))}
-              </div>
-            </article>
+                  <p>{students.length} student account{students.length === 1 ? "" : "s"} - {classRecords.length} submission{classRecords.length === 1 ? "" : "s"} synced</p>
+                  <button className="secondary-button compact-button" onClick={() => goTo("settings")}>Manage Students</button>
+                </article>
+                <article className="panel-card class-roster">
+                  <p className="eyebrow">Student Progress</p>
+                  <div className="module-progress-list">
+                    {classSummary.length ? classSummary.map(({ student, recordCount, percent: studentPercent }) => (
+                      <div className="module-progress-row" key={student.id}>
+                        <span className="student-avatar" aria-hidden="true">{student.name.trim().slice(0, 2).toUpperCase() || "ST"}</span>
+                        <div>
+                          <div className="row-between"><strong>{student.name}{student.section ? ` - ${student.section}` : ""}</strong><span>{studentPercent}%</span></div>
+                          <div className="progress-track"><span style={{ width: `${studentPercent}%` }} /></div>
+                          <small>{recordCount} submission{recordCount === 1 ? "" : "s"} synced</small>
+                        </div>
+                      </div>
+                    )) : <p className="muted">No students yet. Add one from Settings.</p>}
+                  </div>
+                </article>
+              </>
+            ) : (
+              <article className="panel-card overall-progress">
+                <div className="row-between">
+                  <div><p className="eyebrow">All Modules</p><h2>Progress Summary</h2></div>
+                  <strong className="overall-percent">{overallPercent}%</strong>
+                </div>
+                <div className="progress-track overall-track"><span style={{ width: `${overallPercent}%` }} /></div>
+                <p>{overallCompleted} of {overallTotal} activity stages completed</p>
+                <div className="module-progress-list">
+                  {moduleProgress.map(({ module, completed, percent: modulePercent }) => (
+                    <div className="module-progress-row" key={module.id}>
+                      <ModuleIcon moduleId={module.id} />
+                      <div>
+                        <div className="row-between"><strong>{module.quarter}: {module.title}</strong><span>{modulePercent}%</span></div>
+                        <div className="progress-track"><span style={{ width: `${modulePercent}%` }} /></div>
+                        <small>{completed} of {progressKeys.length} stages</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            )}
             <article className="panel-card marker-access">
               <div className="marker-access-copy">
                 <div><p className="eyebrow">AR Marker</p><h2>Printable and downloadable marker</h2><p>Open the marker for printing or download a copy for offline classroom use.</p></div>
@@ -618,6 +669,7 @@ function App() {
 
         {screen === "detail" && (
           <section className="screen active">
+            {isTeacherPreview && <p className="teacher-preview-note">Teacher Preview - explore this lesson before assigning it. Nothing here is saved as student work.</p>}
             <article className="panel-card">
               <div className="module-summary">
                 <ModuleIcon moduleId={activeModule.id} />
@@ -648,9 +700,11 @@ function App() {
                 if (activeModule.predictions.some((_, index) => !selectedPredictions[index])) return showToast("Answer all three prediction questions.");
                 const answers = activeModule.predictions.map((prediction, index) => `${index + 1}. ${prediction.question}\nAnswer: ${selectedPredictions[index]}`).join("\n\n");
                 const text = `${answers}${predictionNote.trim() ? `\n\nReasoning: ${predictionNote.trim()}` : ""}`;
-                await addRecord("Predict", text);
+                if (!isTeacherPreview) {
+                  await addRecord("Predict", text);
+                  markProgress("prediction");
+                }
                 setPredictionReview(text);
-                markProgress("prediction");
                 setTrialPulse(0);
                 goTo("observe");
               }}>Next</button>
@@ -660,6 +714,7 @@ function App() {
 
         {screen === "observe" && (
           <section className="screen active">
+            {isTeacherPreview && <p className="teacher-preview-note">Teacher Preview - trials run normally but aren't saved as student work.</p>}
             <article className="ar-panel">
               <div className="row-between">
                 <div><p className="eyebrow">{viewMode === "ar" ? "Camera Mode" : "3D Model Mode"}</p><h2>{viewMode === "ar" ? "Start the camera and observe the trial" : "Use the model when camera access is unavailable"}</h2></div>
@@ -742,16 +797,19 @@ function App() {
                 if (viewMode === "ar" && !cameraReady) return showToast("Start the camera before saving an AR trial.");
                 setTrialPulse((current) => current + 1);
                 setExperimentTrials((current) => [...current, getExperimentTrial()]);
-                await addRecord("Observe", `Mode: ${viewMode}; ${observationModel.recordText}`);
-                markProgress("observation");
+                if (!isTeacherPreview) {
+                  await addRecord("Observe", `Mode: ${viewMode}; ${observationModel.recordText}`);
+                  markProgress("observation");
+                }
               }}>Run Trial</button>
-              <button className="secondary-button" onClick={() => progress[activeModule.id]?.observation ? goTo("explain") : showToast("Run at least one AR or 3D trial first.")}>Continue</button>
+              <button className="secondary-button" onClick={() => (isTeacherPreview || progress[activeModule.id]?.observation) ? goTo("explain") : showToast("Run at least one AR or 3D trial first.")}>Continue</button>
             </article>
           </section>
         )}
 
         {screen === "explain" && (
           <section className="screen active">
+            {isTeacherPreview && <p className="teacher-preview-note">Teacher Preview - your write-up here isn't saved as student work.</p>}
             <article className="panel-card">
               <p>Use your observations to explain the results.</p>
               <label className="field-label">My predictions<textarea className="readonly-field" rows={10} value={predictionReview} readOnly aria-readonly="true" /></label>
@@ -759,9 +817,11 @@ function App() {
               <label className="field-label">Scientific explanation<textarea rows={5} placeholder="Explain why this happened using scientific ideas." value={explanation} onChange={(event) => setExplanation(event.target.value)} /></label>
               <button className="primary-button" onClick={async () => {
                 if (!evidence.trim() || !explanation.trim()) return showToast("Add evidence and a scientific explanation.");
-                await addRecord("Explain", `Evidence: ${evidence.trim()} / Explanation: ${explanation.trim()}`);
-                markProgress("explanation");
-                markProgress("result");
+                if (!isTeacherPreview) {
+                  await addRecord("Explain", `Evidence: ${evidence.trim()} / Explanation: ${explanation.trim()}`);
+                  markProgress("explanation");
+                  markProgress("result");
+                }
                 goTo("result");
               }}>Submit</button>
             </article>
@@ -770,7 +830,11 @@ function App() {
 
         {screen === "result" && (
           <section className="screen active">
-            <article className="result-card"><div className="score-ring"><strong>{Math.max(25, percent)}%</strong><span>Complete</span></div><h2>Great work!</h2><p>Prediction, Observation, and Explanation completed.</p></article>
+            {isTeacherPreview ? (
+              <article className="result-card"><div className="score-ring"><strong>OK</strong><span>Preview</span></div><h2>Preview complete</h2><p>Prediction, Observation, and Explanation steps previewed.</p></article>
+            ) : (
+              <article className="result-card"><div className="score-ring"><strong>{Math.max(25, percent)}%</strong><span>Complete</span></div><h2>Great work!</h2><p>Prediction, Observation, and Explanation completed.</p></article>
+            )}
             <article className="panel-card look-back"><p className="eyebrow">Look Back</p><h2>{activeModule.title}</h2><p>{activeModule.overview}</p></article>
             <article className="panel-card">
               <p className="eyebrow">Reflection Prompt</p>
@@ -778,9 +842,9 @@ function App() {
               <textarea rows={4} placeholder="Write your reflection..." value={reflection} onChange={(event) => setReflection(event.target.value)} />
               <button className="secondary-button" onClick={async () => {
                 if (!reflection.trim()) return showToast("Write a reflection before saving.");
-                await addRecord("Reflection", reflection.trim());
+                if (!isTeacherPreview) await addRecord("Reflection", reflection.trim());
                 setReflection("");
-                showToast("Reflection saved.");
+                showToast(isTeacherPreview ? "Reflection previewed (not saved)." : "Reflection saved.");
               }}>Save Reflection</button>
             </article>
           </section>

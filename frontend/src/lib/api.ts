@@ -1,5 +1,5 @@
 import { clearSession, getToken } from "./auth";
-import type { ActivityRecord, AuthUser, LearningModule } from "../types/domain";
+import type { ActivityRecord, AuthUser, ClassProgressRecord, LearningModule } from "../types/domain";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
 
@@ -65,4 +65,8 @@ export function createStudent(username: string, password: string, name: string, 
 
 export function listStudents() {
   return request<{ students: AuthUser[] }>("/auth/students");
+}
+
+export function fetchClassProgress() {
+  return request<{ students: AuthUser[]; records: ClassProgressRecord[] }>("/auth/class-progress");
 }
