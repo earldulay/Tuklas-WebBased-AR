@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { modules } from "../data/modules.js";
+import { modules, toPersistedModule } from "../data/modules.js";
 import { hasDatabaseUrl } from "../lib/database.js";
 import { prisma } from "../lib/prisma.js";
 
@@ -30,13 +30,14 @@ syncRouter.post("/", async (request, response, next) => {
     const payload = syncSchema.parse(request.body);
 
     await Promise.all(
-      modules.map((module) =>
-        prisma.module.upsert({
+      modules.map((module) => {
+        const persisted = toPersistedModule(module);
+        return prisma.module.upsert({
           where: { id: module.id },
-          update: module,
-          create: module,
-        }),
-      ),
+          update: persisted,
+          create: persisted,
+        });
+      }),
     );
 
     const records = await Promise.all(

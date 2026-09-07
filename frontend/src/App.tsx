@@ -4,6 +4,7 @@ import { clearRecords, loadProgress, loadRecords, replaceRecords, saveProgress, 
 import { modules as fallbackModules } from "./data/modules";
 import type { ActivityRecord, LearningModule, ProgressState, Role, Screen, Stage, ViewMode } from "./types/domain";
 import { ScienceScene } from "./components/ScienceScene";
+import { Activity, CircuitBoard, Earth, Microscope, Thermometer, type LucideIcon } from "lucide-react";
 
 const progressKeys = ["prediction", "observation", "explanation", "result"] as const;
 const offlineAssets = [
@@ -44,6 +45,18 @@ interface ExperimentTrial {
 
 const organelleNames = ["None", "Nucleus", "Mitochondria", "Chloroplast", "Cell membrane"];
 const earthLayerNames = ["Crust", "Mantle", "Outer core", "Inner core"];
+const moduleIcons: Record<string, LucideIcon> = {
+  motion: Activity,
+  electricity: CircuitBoard,
+  materials: Thermometer,
+  life: Microscope,
+  "earth-space": Earth,
+};
+
+function ModuleIcon({ moduleId }: { moduleId: string }) {
+  const Icon = moduleIcons[moduleId] || Activity;
+  return <span className="module-icon" aria-hidden="true"><Icon size={24} strokeWidth={2.2} /></span>;
+}
 
 function getObservationModel(moduleId: string, controlA: number, controlB: number): ObservationModel {
   if (moduleId === "electricity") {
@@ -229,7 +242,7 @@ function App() {
   const [records, setRecords] = useState<ActivityRecord[]>([]);
   const [progress, setProgressState] = useState<ProgressState>(() => loadProgress());
   const [query, setQuery] = useState("");
-  const [selectedPrediction, setSelectedPrediction] = useState("");
+  const [selectedPredictions, setSelectedPredictions] = useState<string[]>([]);
   const [predictionNote, setPredictionNote] = useState("");
   const [predictionReview, setPredictionReview] = useState("");
   const [evidence, setEvidence] = useState("");
@@ -294,6 +307,9 @@ function App() {
     setControlB(defaults.controlB);
     setTrialPulse(0);
     setExperimentTrials([]);
+    setSelectedPredictions([]);
+    setPredictionNote("");
+    setPredictionReview("");
   }, [activeModule.id]);
 
   function showToast(message: string) {
@@ -422,7 +438,7 @@ function App() {
           <p>Predict, observe, and explain science concepts using camera-based classroom activities and offline-ready learning records.</p>
           <div className="landing-actions">
             <button className="primary-button" onClick={() => applyRole("student")}>Continue as Student</button>
-            <button className="secondary-button" onClick={() => applyRole("teacher")}>Open Teacher Review</button>
+            <button className="secondary-button" onClick={() => applyRole("teacher")}>Open Teacher Mode</button>
           </div>
         </section>
         <section className="landing-flow" aria-label="Learning flow">
@@ -459,7 +475,8 @@ function App() {
           <section className="screen active">
             <article className="hero-card">
               <p className="eyebrow">Current Activity</p>
-              <div className="module-summary no-icon">
+              <div className="module-summary">
+                <ModuleIcon moduleId={activeModule.id} />
                 <div>
                   <h2>{activeModule.title}</h2>
                   <p>{activeModule.task}</p>
@@ -499,6 +516,7 @@ function App() {
             <div className="module-list">
               {visibleModules.map((item) => (
                 <button className="module-card" key={item.id} onClick={() => { setActiveModule(item); goTo("detail"); }}>
+                  <ModuleIcon moduleId={item.id} />
                   <span><strong>{item.title}</strong><small>{item.subtitle}</small></span>
                   <small>{item.quarter}</small>
                   <span aria-hidden="true">&gt;</span>
@@ -511,7 +529,8 @@ function App() {
         {screen === "detail" && (
           <section className="screen active">
             <article className="panel-card">
-              <div className="module-summary no-icon">
+              <div className="module-summary">
+                <ModuleIcon moduleId={activeModule.id} />
                 <div><h2>{activeModule.title}</h2><p>{activeModule.quarter}</p><small>Estimated time: {activeModule.time}</small></div>
               </div>
             </article>
@@ -521,19 +540,26 @@ function App() {
               <div className="poe-steps">{["Predict", "Observe", "Explain"].map((label, index) => <span className={index === 0 ? "active" : ""} key={label}>{index + 1}<small>{label}</small></span>)}</div>
             </article>
             <article className="panel-card">
-              <p className="eyebrow">Prediction Question</p>
-              <h2>{activeModule.prediction}</h2>
-              <div className="choice-list">
-                {activeModule.choices.map((choice) => (
-                  <label key={choice}><input type="radio" name="predictionChoice" value={choice} checked={selectedPrediction === choice} onChange={(event) => setSelectedPrediction(event.target.value)} /><span>{choice}</span></label>
+              <p className="eyebrow">Prediction Questions</p>
+              <div className="prediction-questions">
+                {activeModule.predictions.map((prediction, questionIndex) => (
+                  <fieldset className="prediction-question" key={prediction.question}>
+                    <legend><span>{questionIndex + 1}</span>{prediction.question}</legend>
+                    <div className="choice-list">
+                      {prediction.choices.map((choice) => (
+                        <label key={choice}><input type="radio" name={`prediction-${questionIndex}`} value={choice} checked={selectedPredictions[questionIndex] === choice} onChange={(event) => setSelectedPredictions((current) => { const next = [...current]; next[questionIndex] = event.target.value; return next; })} /><span>{choice}</span></label>
+                      ))}
+                    </div>
+                  </fieldset>
                 ))}
               </div>
-              <textarea rows={4} placeholder="Why do you think so?" value={predictionNote} onChange={(event) => setPredictionNote(event.target.value)} />
+              <textarea rows={3} placeholder="Why do you think so? (optional)" value={predictionNote} onChange={(event) => setPredictionNote(event.target.value)} />
               <button className="primary-button" onClick={async () => {
-                if (!selectedPrediction) return showToast("Choose a prediction to continue.");
-                const text = `${selectedPrediction}${predictionNote.trim() ? ` - ${predictionNote.trim()}` : ""}`;
+                if (activeModule.predictions.some((_, index) => !selectedPredictions[index])) return showToast("Answer all three prediction questions.");
+                const answers = activeModule.predictions.map((prediction, index) => `${index + 1}. ${prediction.question}\nAnswer: ${selectedPredictions[index]}`).join("\n\n");
+                const text = `${answers}${predictionNote.trim() ? `\n\nReasoning: ${predictionNote.trim()}` : ""}`;
                 await addRecord("Predict", text);
-                setPredictionReview(`${selectedPrediction}${predictionNote.trim() ? `\n${predictionNote.trim()}` : ""}`);
+                setPredictionReview(text);
                 markProgress("prediction");
                 setTrialPulse(0);
                 goTo("observe");
@@ -638,7 +664,7 @@ function App() {
           <section className="screen active">
             <article className="panel-card">
               <p>Use your observations to explain the results.</p>
-              <label className="field-label">My prediction<textarea rows={4} value={predictionReview} onChange={(event) => setPredictionReview(event.target.value)} /></label>
+              <label className="field-label">My predictions<textarea className="readonly-field" rows={10} value={predictionReview} readOnly aria-readonly="true" /></label>
               <label className="field-label">Evidence from observation<textarea rows={5} placeholder="What did you observe? Include data or patterns." value={evidence} onChange={(event) => setEvidence(event.target.value)} /></label>
               <label className="field-label">Scientific explanation<textarea rows={5} placeholder="Explain why this happened using scientific ideas." value={explanation} onChange={(event) => setExplanation(event.target.value)} /></label>
               <button className="primary-button" onClick={async () => {
@@ -655,7 +681,7 @@ function App() {
         {screen === "result" && (
           <section className="screen active">
             <article className="result-card"><div className="score-ring"><strong>{Math.max(25, percent)}%</strong><span>Complete</span></div><h2>Great work!</h2><p>Prediction, Observation, and Explanation completed.</p></article>
-            <article className="panel-card"><p className="eyebrow">Teacher Review</p><p>Good use of evidence in your observations. Try to explain the relationship between force and acceleration more clearly.</p></article>
+            <article className="panel-card look-back"><p className="eyebrow">Look Back</p><h2>{activeModule.title}</h2><p>{activeModule.overview}</p></article>
             <article className="panel-card">
               <p className="eyebrow">Reflection Prompt</p>
               <p>What did you learn from this activity? How can this be applied in real life?</p>
@@ -673,7 +699,7 @@ function App() {
         {screen === "settings" && (
           <section className="screen active">
             <button className="settings-row" onClick={prepareOffline}><span><strong>Prepare for Offline Use</strong><small>{offlineStatus}</small></span><span aria-hidden="true">&gt;</span></button>
-            <button className="settings-row" onClick={handleSync}><span><strong>Sync Saved Work</strong><small>{records.filter((record) => !record.syncedAt).length} records waiting for teacher review.</small></span><span aria-hidden="true">&gt;</span></button>
+            <button className="settings-row" onClick={handleSync}><span><strong>Sync Saved Work</strong><small>{records.filter((record) => !record.syncedAt).length} records waiting to sync.</small></span><span aria-hidden="true">&gt;</span></button>
             <button className="settings-row" onClick={checkDevice}><span><strong>Device Check</strong><small>{deviceStatus}</small></span><span aria-hidden="true">&gt;</span></button>
             <article className="panel-card offline-checklist"><p className="eyebrow">Offline Setup</p><ol><li>Open this HTTPS app while connected.</li><li>Tap Prepare for Offline Use.</li><li>Add the app to the home screen.</li><li>Reopen in airplane mode and run one trial.</li></ol></article>
             <article className="panel-card teacher-tools">

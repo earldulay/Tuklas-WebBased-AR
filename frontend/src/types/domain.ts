@@ -14,9 +14,12 @@ export interface LearningModule {
   quarter: string;
   time: string;
   task: string;
-  prediction: string;
-  choices: string[];
+  predictions: {
+    question: string;
+    choices: string[];
+  }[];
   observe: string;
+  overview: string;
 }
 
 export interface ActivityRecord {
