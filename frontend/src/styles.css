@@ -1314,6 +1314,26 @@ input[type="range"] {
   background: #eaf2ff;
 }
 
+.disclosure-toggle {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+}
+
+.disclosure-chevron {
+  display: inline-block;
+  color: var(--muted);
+  font-weight: 800;
+  transition: transform 0.15s ease;
+}
+
+.disclosure-chevron.open {
+  transform: rotate(90deg);
+}
+
 .home-actions {
   display: flex;
   flex-wrap: wrap;

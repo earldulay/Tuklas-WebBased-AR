@@ -254,6 +254,7 @@ function App() {
   const [sections, setSections] = useState<SectionSummary[]>([]);
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<Section | null>(null);
+  const [showAddStudent, setShowAddStudent] = useState(false);
   const [sectionStudents, setSectionStudents] = useState<AuthUser[]>([]);
   const [newSectionName, setNewSectionName] = useState("");
   const [sectionFormError, setSectionFormError] = useState("");
@@ -449,6 +450,7 @@ function App() {
     setActiveSectionId(sectionId);
     setActiveSection(null);
     setSectionStudents([]);
+    setShowAddStudent(false);
     goTo("section");
   }
 
@@ -467,6 +469,7 @@ function App() {
       setStudentUsername("");
       setStudentPassword("");
       setStudentName("");
+      setShowAddStudent(false);
       showToast(`Student account "${result.user.username}" created.`);
     } catch (error) {
       setStudentFormError(error instanceof ApiError ? error.message : "Could not create student account.");
@@ -959,14 +962,19 @@ function App() {
               <p>{sectionStudents.length} student{sectionStudents.length === 1 ? "" : "s"} enrolled</p>
             </article>
             <article className="panel-card">
-              <p className="eyebrow">Add Student</p>
-              <form className="auth-form compact-form" onSubmit={handleCreateSectionStudent}>
-                <label className="field-label">Full name<input type="text" value={studentName} onChange={(event) => setStudentName(event.target.value)} required /></label>
-                <label className="field-label">Username<input type="text" value={studentUsername} onChange={(event) => setStudentUsername(event.target.value)} required minLength={3} /></label>
-                <label className="field-label">Password<input type="password" value={studentPassword} onChange={(event) => setStudentPassword(event.target.value)} required minLength={8} /></label>
-                {studentFormError && <p className="auth-error" role="alert">{studentFormError}</p>}
-                <button className="secondary-button" type="submit">Add Student</button>
-              </form>
+              <button type="button" className="row-between disclosure-toggle" onClick={() => setShowAddStudent((current) => !current)} aria-expanded={showAddStudent}>
+                <span className="eyebrow">Add Student</span>
+                <span className={`disclosure-chevron ${showAddStudent ? "open" : ""}`} aria-hidden="true">&gt;</span>
+              </button>
+              {showAddStudent && (
+                <form className="auth-form compact-form" onSubmit={handleCreateSectionStudent}>
+                  <label className="field-label">Full name<input type="text" value={studentName} onChange={(event) => setStudentName(event.target.value)} required /></label>
+                  <label className="field-label">Username<input type="text" value={studentUsername} onChange={(event) => setStudentUsername(event.target.value)} required minLength={3} /></label>
+                  <label className="field-label">Password<input type="password" value={studentPassword} onChange={(event) => setStudentPassword(event.target.value)} required minLength={8} /></label>
+                  {studentFormError && <p className="auth-error" role="alert">{studentFormError}</p>}
+                  <button className="secondary-button" type="submit">Add Student</button>
+                </form>
+              )}
             </article>
             <article className="panel-card">
               <p className="eyebrow">Enrolled Students</p>
