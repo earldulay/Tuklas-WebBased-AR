@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fetchModules, syncRecords } from "./lib/api";
 import { clearRecords, loadProgress, loadRecords, replaceRecords, saveProgress, saveRecord } from "./lib/storage";
 import { modules as fallbackModules } from "./data/modules";
@@ -6,7 +6,15 @@ import type { ActivityRecord, LearningModule, ProgressState, Role, Screen, Stage
 import { ScienceScene } from "./components/ScienceScene";
 
 const progressKeys = ["prediction", "observation", "explanation", "result"] as const;
-const offlineAssets = ["/", "/index.html", "/manifest.webmanifest", "/service-worker.js", "/assets/tuklas-marker.svg"];
+const offlineAssets = [
+  "/",
+  "/index.html",
+  "/manifest.webmanifest",
+  "/service-worker.js",
+  "/assets/camera_para.dat",
+  "/assets/tuklas-marker.patt",
+  "/assets/tuklas-marker.svg",
+];
 
 interface ObservationModel {
   title: string;
@@ -231,8 +239,6 @@ function App() {
   const [deviceStatus, setDeviceStatus] = useState("Camera, WebGL, service worker, and storage readiness.");
   const [cameraStatus, setCameraStatus] = useState("Camera is off.");
   const [cameraReady, setCameraReady] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const cameraStreamRef = useRef<MediaStream | null>(null);
 
   const visibleModules = useMemo(
     () => modules.filter((item) => `${item.title} ${item.subtitle} ${item.quarter}`.toLowerCase().includes(query.toLowerCase())),
@@ -282,70 +288,9 @@ function App() {
     setTrialPulse(0);
   }, [activeModule.id]);
 
-  useEffect(() => {
-    if (screen !== "observe" || viewMode !== "ar") stopCamera();
-  }, [screen, viewMode]);
-
-  useEffect(() => () => stopCamera(), []);
-
   function showToast(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
-  }
-
-  function isSecureCameraOrigin() {
-    return location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
-  }
-
-  function stopCamera() {
-    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
-    cameraStreamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
-    setCameraStatus("Camera is off.");
-    setCameraReady(false);
-  }
-
-  async function startCamera() {
-    if (!isSecureCameraOrigin()) {
-      const message = "Camera needs HTTPS or localhost.";
-      setCameraStatus(message);
-      showToast(message);
-      return;
-    }
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      const message = "Camera API is unavailable in this browser.";
-      setCameraStatus(message);
-      showToast(message);
-      return;
-    }
-
-    try {
-      stopCamera();
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      });
-      cameraStreamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      const message = "Camera is live.";
-      setCameraStatus(message);
-      setCameraReady(true);
-      showToast(message);
-    } catch (error) {
-      const blocked = error instanceof DOMException && error.name === "NotAllowedError";
-      const message = blocked ? "Camera permission was blocked." : "Camera failed to start.";
-      setCameraStatus(message);
-      setCameraReady(false);
-      showToast(message);
-    }
   }
 
   function goTo(nextScreen: Screen, push = true) {
@@ -367,7 +312,6 @@ function App() {
   }
 
   function logout() {
-    stopCamera();
     setRole("");
     setScreen("home");
     setHistory([]);
@@ -591,16 +535,21 @@ function App() {
                 <button className="text-button compact-button" onClick={() => setViewMode(viewMode === "ar" ? "fallback" : "ar")}>{viewMode === "ar" ? "Use 3D Model" : "Use Camera"}</button>
               </div>
               <div className={`ar-frame ${viewMode === "fallback" ? "fallback-mode" : ""}`}>
-                {viewMode === "ar" && <video ref={videoRef} className="camera-video" muted playsInline autoPlay />}
+                {viewMode === "ar" && (
+                  <ScienceScene
+                    acceleration={controlA / controlB}
+                    force={controlA}
+                    mass={controlB}
+                    viewMode="ar"
+                    onArReady={setCameraReady}
+                    onArStatus={setCameraStatus}
+                  />
+                )}
                 {viewMode === "fallback" && <ActivityVisual moduleId={activeModule.id} controlA={controlA} controlB={controlB} trialPulse={trialPulse} />}
               </div>
               {viewMode === "ar" && (
                 <>
                   <p className="camera-status">{cameraStatus}</p>
-                  <div className="tool-grid">
-                    <button onClick={startCamera}>Start Camera</button>
-                    <button onClick={stopCamera}>Stop Camera</button>
-                  </div>
                 </>
               )}
             </article>

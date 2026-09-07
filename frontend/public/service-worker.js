@@ -3,6 +3,8 @@ const ASSETS = [
   "/",
   "/index.html",
   "/manifest.webmanifest",
+  "/assets/camera_para.dat",
+  "/assets/tuklas-marker.patt",
   "/assets/tuklas-marker.svg"
 ];
 
