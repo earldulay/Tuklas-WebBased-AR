@@ -12,6 +12,12 @@ import { Activity, CircuitBoard, Download, Earth, Microscope, Printer, Thermomet
 // optional bonus, not part of the locked Predict/Observe/Explain flow.
 const REQUIRED_STAGES: Stage[] = ["Predict", "Observe", "Explain"];
 
+// How often "live" views (teacher's Class Progress and Section roster, a
+// student's own reconciled progress) re-fetch while on screen and online,
+// so a teacher sees new submissions - and a reset student sees their
+// screen unlock - without needing to navigate away and back.
+const LIVE_REFRESH_MS = 15000;
+
 function stagesFor(recordsList: ActivityRecord[], moduleId: string): Set<Stage> {
   return new Set(recordsList.filter((record) => record.moduleId === moduleId).map((record) => record.stage));
 }
@@ -355,16 +361,22 @@ function App() {
     if (!online || !user) return;
     if (screen !== "home" && screen !== "modules") return;
 
-    fetchMyRecords()
-      .then((result) => {
-        setRecords((current) => {
-          const unsyncedLocal = current.filter((record) => !record.syncedAt && !result.records.some((serverRecord) => serverRecord.id === record.id));
-          const merged = [...result.records, ...unsyncedLocal];
-          replaceRecords(user.id, merged);
-          return merged;
-        });
-      })
-      .catch(() => undefined);
+    const reconcile = () => {
+      fetchMyRecords()
+        .then((result) => {
+          setRecords((current) => {
+            const unsyncedLocal = current.filter((record) => !record.syncedAt && !result.records.some((serverRecord) => serverRecord.id === record.id));
+            const merged = [...result.records, ...unsyncedLocal];
+            replaceRecords(user.id, merged);
+            return merged;
+          });
+        })
+        .catch(() => undefined);
+    };
+
+    reconcile();
+    const interval = window.setInterval(reconcile, LIVE_REFRESH_MS);
+    return () => window.clearInterval(interval);
   }, [online, user, screen]);
 
   useEffect(() => {
@@ -395,15 +407,21 @@ function App() {
   }, [viewMode]);
 
   useEffect(() => {
-    if (screen === "home" && role === "teacher") {
+    if (!online || !(screen === "home" && role === "teacher")) return;
+
+    const load = () => {
       fetchClassProgress()
         .then((result) => {
           setStudents(result.students);
           setClassRecords(result.records);
         })
         .catch(() => undefined);
-    }
-  }, [screen, role]);
+    };
+
+    load();
+    const interval = window.setInterval(load, LIVE_REFRESH_MS);
+    return () => window.clearInterval(interval);
+  }, [online, screen, role]);
 
   useEffect(() => {
     if (screen === "classes" && role === "teacher") {
@@ -412,7 +430,9 @@ function App() {
   }, [screen, role]);
 
   useEffect(() => {
-    if (screen === "section" && activeSectionId) {
+    if (!online || !(screen === "section" && activeSectionId)) return;
+
+    const load = () => {
       getSection(activeSectionId)
         .then((result) => {
           setActiveSection(result.section);
@@ -420,8 +440,12 @@ function App() {
           setSectionRecords(result.records);
         })
         .catch(() => undefined);
-    }
-  }, [screen, activeSectionId]);
+    };
+
+    load();
+    const interval = window.setInterval(load, LIVE_REFRESH_MS);
+    return () => window.clearInterval(interval);
+  }, [online, screen, activeSectionId]);
 
   useEffect(() => {
     document.body.classList.toggle("login-open", !role);

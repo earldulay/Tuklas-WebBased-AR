@@ -1,4 +1,4 @@
-const CACHE_NAME = "tuklas-webar-v10";
+const CACHE_NAME = "tuklas-webar-v11";
 const ASSETS = [
   "/",
   "/index.html",
@@ -28,6 +28,9 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
+  // Navigations (loading the app shell) always go to the network first, so
+  // a fresh index.html - pointing at the current build's hashed JS/CSS - is
+  // used whenever the device is online. Only offline falls back to cache.
   if (event.request.mode === "navigate") {
     event.respondWith(
       fetch(event.request)
@@ -41,16 +44,24 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Everything else (hashed build assets, marker images, the manifest):
+  // stale-while-revalidate. Serve instantly from cache if present, but
+  // always refetch in the background and update the cache, so the next
+  // load - even without a full reload - has the latest version. Hashed
+  // filenames change per build, so this never serves an old build's asset
+  // under a new build's URL.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-
-      return fetch(event.request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        return response;
-      });
-    }),
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.match(event.request).then((cached) => {
+        const network = fetch(event.request)
+          .then((response) => {
+            if (response && response.status === 200) cache.put(event.request, response.clone());
+            return response;
+          })
+          .catch(() => cached);
+        return cached || network;
+      }),
+    ),
   );
 });
 
