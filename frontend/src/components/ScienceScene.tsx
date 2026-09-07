@@ -29,7 +29,7 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 100);
-    camera.position.set(0, 2.4, 6);
+    if (viewMode === "fallback") camera.position.set(0, 2.4, 6);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -45,6 +45,16 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
     modelRoot.scale.setScalar(viewMode === "ar" ? 0.18 : 1);
     modelRoot.position.y = viewMode === "ar" ? 0.08 : 0;
     trackedRoot.add(modelRoot);
+
+    if (viewMode === "ar") {
+      const markerSurface = new THREE.Mesh(
+        new THREE.PlaneGeometry(5.4, 5.4),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.18, side: THREE.DoubleSide }),
+      );
+      markerSurface.rotation.x = -Math.PI / 2;
+      markerSurface.position.y = -0.45;
+      modelRoot.add(markerSurface);
+    }
 
     const light = new THREE.HemisphereLight(0xffffff, 0x24324d, 2.5);
     modelRoot.add(light);
@@ -185,11 +195,12 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
     };
 
     const resize = () => {
-      camera.aspect = mount.clientWidth / mount.clientHeight;
-      camera.updateProjectionMatrix();
       renderer.setSize(mount.clientWidth, mount.clientHeight);
       if (viewMode === "ar" && arSource && arContext) {
         arSource.onResize(arContext, renderer, camera);
+      } else {
+        camera.aspect = mount.clientWidth / mount.clientHeight;
+        camera.updateProjectionMatrix();
       }
     };
 
