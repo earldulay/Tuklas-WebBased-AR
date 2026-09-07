@@ -119,9 +119,16 @@ authRouter.post("/students/:studentId/reset-progress", requireAuth, requireRole(
     }
 
     const payload = resetProgressSchema.parse(request.body ?? {});
-    const result = await prisma.activityRecord.deleteMany({
-      where: payload.moduleId ? { userId: student.id, moduleId: payload.moduleId } : { userId: student.id },
-    });
+    const scope = payload.moduleId ? { userId: student.id, moduleId: payload.moduleId } : { userId: student.id };
+    const [result] = await Promise.all([
+      prisma.activityRecord.deleteMany({ where: scope }),
+      // A grade refers to a specific submission - once that submission is
+      // wiped for a redo, the old score/comment would otherwise linger and
+      // misleadingly show as "Graded" before the student has resubmitted.
+      prisma.feedback.deleteMany({
+        where: payload.moduleId ? { studentId: student.id, moduleId: payload.moduleId } : { studentId: student.id },
+      }),
+    ]);
 
     response.json({ deleted: result.count });
   } catch (error) {

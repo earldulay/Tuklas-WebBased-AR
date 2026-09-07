@@ -574,6 +574,7 @@ function App() {
     try {
       await resetStudentProgress(studentId, moduleId);
       setSectionRecords((current) => current.filter((record) => !(record.userId === studentId && (!moduleId || record.moduleId === moduleId))));
+      setSectionFeedback((current) => current.filter((entry) => !(entry.studentId === studentId && (!moduleId || entry.moduleId === moduleId))));
       showToast("Progress reset.");
     } catch (error) {
       showToast(error instanceof ApiError ? error.message : "Could not reset progress.");
