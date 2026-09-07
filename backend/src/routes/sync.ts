@@ -30,11 +30,14 @@ syncRouter.get("/mine", requireAuth, async (request, response, next) => {
   }
 
   try {
-    const records = await prisma.activityRecord.findMany({
-      where: { userId: request.user!.sub },
-      orderBy: { createdAt: "asc" },
-      include: { module: { select: { title: true } } },
-    });
+    const [records, feedback] = await Promise.all([
+      prisma.activityRecord.findMany({
+        where: { userId: request.user!.sub },
+        orderBy: { createdAt: "asc" },
+        include: { module: { select: { title: true } } },
+      }),
+      prisma.feedback.findMany({ where: { studentId: request.user!.sub } }),
+    ]);
 
     response.json({
       records: records.map((record) => ({
@@ -48,6 +51,13 @@ syncRouter.get("/mine", requireAuth, async (request, response, next) => {
         text: record.text,
         createdAt: record.createdAt.toISOString(),
         syncedAt: record.syncedAt.toISOString(),
+      })),
+      feedback: feedback.map((entry) => ({
+        id: entry.id,
+        moduleId: entry.moduleId,
+        score: entry.score,
+        comment: entry.comment,
+        updatedAt: entry.updatedAt.toISOString(),
       })),
     });
   } catch (error) {

@@ -1322,6 +1322,10 @@ input[type="range"] {
   margin-top: 10px;
 }
 
+.feedback-card {
+  border-left: 5px solid var(--blue);
+}
+
 .student-progress-panel {
   display: grid;
   gap: 10px;
@@ -1337,6 +1341,19 @@ input[type="range"] {
 .student-module-row small {
   color: var(--muted);
   font-weight: 800;
+}
+
+.module-grade-link {
+  width: auto;
+  min-height: auto;
+  border: 0;
+  padding: 0;
+  color: var(--blue);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-align: left;
+  text-decoration: underline;
+  background: none;
 }
 
 .disclosure-toggle {

@@ -44,6 +44,9 @@ model User {
 
   records ActivityRecord[]
 
+  receivedFeedback Feedback[] @relation("StudentFeedback")
+  givenFeedback    Feedback[] @relation("TeacherFeedback")
+
   @@index([role])
   @@index([createdById])
   @@index([sectionId])
@@ -76,6 +79,7 @@ model Module {
   updatedAt DateTime @updatedAt
 
   submissions ActivityRecord[]
+  feedback    Feedback[]
 }
 
 model ActivityRecord {
@@ -95,4 +99,24 @@ model ActivityRecord {
   @@index([role])
   @@index([createdAt])
   @@index([userId])
+}
+
+// A teacher's grade/comment on one student's work for one module. One row
+// per (student, module) - saving again updates it rather than piling up a
+// history, matching how a teacher would actually re-grade a redo.
+model Feedback {
+  id        String   @id @default(cuid())
+  studentId String
+  student   User     @relation("StudentFeedback", fields: [studentId], references: [id])
+  moduleId  String
+  module    Module   @relation(fields: [moduleId], references: [id])
+  teacherId String
+  teacher   User     @relation("TeacherFeedback", fields: [teacherId], references: [id])
+  score     Int?
+  comment   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, moduleId])
+  @@index([teacherId])
 }

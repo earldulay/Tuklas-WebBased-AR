@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ApiError, createSection, createSectionStudent, fetchClassProgress, fetchModules, fetchMyRecords, getSection, listSections, login as apiLogin, registerTeacher, resetStudentProgress, syncRecords } from "./lib/api";
+import { ApiError, createSection, createSectionStudent, fetchClassProgress, fetchModules, fetchMyRecords, getSection, listSections, login as apiLogin, registerTeacher, resetStudentProgress, submitFeedback, syncRecords } from "./lib/api";
 import { clearSession, getStoredUser, setSession } from "./lib/auth";
 import { clearRecords, loadRecords, replaceRecords, saveRecord } from "./lib/storage";
 import { modules as fallbackModules } from "./data/modules";
-import type { ActivityRecord, AuthUser, ClassProgressRecord, LearningModule, Role, Screen, Section, SectionSummary, Stage, ViewMode } from "./types/domain";
+import type { ActivityRecord, AuthUser, ClassProgressRecord, Feedback, LearningModule, Role, Screen, Section, SectionSummary, Stage, ViewMode } from "./types/domain";
 import { ScienceScene } from "./components/ScienceScene";
 import { Activity, CircuitBoard, Download, Earth, Microscope, Printer, Thermometer, type LucideIcon } from "lucide-react";
 
@@ -271,7 +271,14 @@ function App() {
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [sectionStudents, setSectionStudents] = useState<AuthUser[]>([]);
   const [sectionRecords, setSectionRecords] = useState<ClassProgressRecord[]>([]);
+  const [sectionFeedback, setSectionFeedback] = useState<Feedback[]>([]);
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
+  const [gradingStudent, setGradingStudent] = useState<AuthUser | null>(null);
+  const [gradingModuleId, setGradingModuleId] = useState<string | null>(null);
+  const [feedbackScore, setFeedbackScore] = useState("");
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [feedbackFormError, setFeedbackFormError] = useState("");
+  const [myFeedback, setMyFeedback] = useState<Feedback[]>([]);
   const [newSectionName, setNewSectionName] = useState("");
   const [sectionFormError, setSectionFormError] = useState("");
   const [screen, setScreen] = useState<Screen>("home");
@@ -311,6 +318,7 @@ function App() {
   const explainLocked = !isTeacherPreview && activeModuleStages.has("Explain");
   const predictionReview = records.find((record) => record.moduleId === activeModule.id && record.stage === "Predict")?.text || "";
   const existingExplainText = records.find((record) => record.moduleId === activeModule.id && record.stage === "Explain")?.text || "";
+  const activeModuleFeedback = myFeedback.find((entry) => entry.moduleId === activeModule.id);
   const percent = Math.round((REQUIRED_STAGES.filter((stage) => activeModuleStages.has(stage)).length / REQUIRED_STAGES.length) * 100);
   const moduleProgress = modules.map((module) => {
     const stages = stagesFor(records, module.id);
@@ -370,6 +378,7 @@ function App() {
             replaceRecords(user.id, merged);
             return merged;
           });
+          setMyFeedback(result.feedback);
         })
         .catch(() => undefined);
     };
@@ -438,6 +447,7 @@ function App() {
           setActiveSection(result.section);
           setSectionStudents(result.students);
           setSectionRecords(result.records);
+          setSectionFeedback(result.feedback);
         })
         .catch(() => undefined);
     };
@@ -544,6 +554,7 @@ function App() {
     setActiveSection(null);
     setSectionStudents([]);
     setSectionRecords([]);
+    setSectionFeedback([]);
     setExpandedStudentId(null);
     setShowAddStudent(false);
     goTo("section");
@@ -565,6 +576,40 @@ function App() {
       showToast("Progress reset.");
     } catch (error) {
       showToast(error instanceof ApiError ? error.message : "Could not reset progress.");
+    }
+  }
+
+  function openGrading(student: AuthUser, moduleId: string) {
+    const existing = sectionFeedback.find((entry) => entry.studentId === student.id && entry.moduleId === moduleId);
+    setGradingStudent(student);
+    setGradingModuleId(moduleId);
+    setFeedbackScore(existing?.score != null ? String(existing.score) : "");
+    setFeedbackComment(existing?.comment || "");
+    setFeedbackFormError("");
+    goTo("grade");
+  }
+
+  async function handleSubmitFeedback(event: FormEvent) {
+    event.preventDefault();
+    setFeedbackFormError("");
+    if (!activeSectionId || !gradingStudent || !gradingModuleId) return;
+    if (!feedbackComment.trim()) {
+      setFeedbackFormError("Write a comment for the student.");
+      return;
+    }
+    const score = feedbackScore.trim() ? Number(feedbackScore) : null;
+    if (score !== null && (Number.isNaN(score) || score < 0 || score > 100)) {
+      setFeedbackFormError("Score must be a number from 0 to 100 (or left blank).");
+      return;
+    }
+
+    try {
+      const result = await submitFeedback(activeSectionId, gradingStudent.id, gradingModuleId, score, feedbackComment.trim());
+      setSectionFeedback((current) => [...current.filter((entry) => !(entry.studentId === gradingStudent.id && entry.moduleId === gradingModuleId)), { ...result.feedback, studentId: gradingStudent.id }]);
+      showToast("Feedback saved.");
+      goBack();
+    } catch (error) {
+      setFeedbackFormError(error instanceof ApiError ? error.message : "Could not save feedback.");
     }
   }
 
@@ -701,6 +746,7 @@ function App() {
     settings: ["Setup", isTeacherPreview ? "Device Setup" : "Device and Saved Work"],
     classes: ["Classes", "Sections You Handle"],
     section: ["Section", activeSection?.name || "Section"],
+    grade: ["Grading", gradingStudent?.name || "Student"],
   };
 
   if (!user) {
@@ -868,12 +914,20 @@ function App() {
               <div className="poe-steps">{["Predict", "Observe", "Explain"].map((label, index) => <span className={index === 0 ? "active" : ""} key={label}>{index + 1}<small>{label}</small></span>)}</div>
             </article>
             {predictLocked ? (
-              <article className="panel-card locked-notice">
-                <p className="eyebrow">Prediction Submitted</p>
-                <p>You already submitted your prediction for this module. Ask your teacher to reset it if you need to try again.</p>
-                <textarea className="readonly-field" rows={6} value={predictionReview} readOnly aria-readonly="true" aria-label="Your submitted prediction" />
-                <button className="primary-button" onClick={() => { setTrialPulse(0); goTo("observe"); }}>Continue to Observe</button>
-              </article>
+              <>
+                <article className="panel-card locked-notice">
+                  <p className="eyebrow">Prediction Submitted</p>
+                  <p>You already submitted your prediction for this module. Ask your teacher to reset it if you need to try again.</p>
+                  <textarea className="readonly-field" rows={6} value={predictionReview} readOnly aria-readonly="true" aria-label="Your submitted prediction" />
+                  <button className="primary-button" onClick={() => { setTrialPulse(0); goTo("observe"); }}>Continue to Observe</button>
+                </article>
+                {activeModuleFeedback && (
+                  <article className="panel-card feedback-card">
+                    <div className="row-between"><p className="eyebrow">Teacher Feedback</p>{activeModuleFeedback.score != null && <strong className="overall-percent">{activeModuleFeedback.score}/100</strong>}</div>
+                    <p>{activeModuleFeedback.comment}</p>
+                  </article>
+                )}
+              </>
             ) : (
               <article className="panel-card">
                 <p className="eyebrow">Prediction Questions</p>
@@ -1039,6 +1093,12 @@ function App() {
               <article className="result-card"><div className="score-ring"><strong>{Math.max(25, percent)}%</strong><span>Complete</span></div><h2>Great work!</h2><p>Prediction, Observation, and Explanation completed.</p></article>
             )}
             <article className="panel-card look-back"><p className="eyebrow">Look Back</p><h2>{activeModule.title}</h2><p>{activeModule.overview}</p></article>
+            {activeModuleFeedback && (
+              <article className="panel-card feedback-card">
+                <div className="row-between"><p className="eyebrow">Teacher Feedback</p>{activeModuleFeedback.score != null && <strong className="overall-percent">{activeModuleFeedback.score}/100</strong>}</div>
+                <p>{activeModuleFeedback.comment}</p>
+              </article>
+            )}
             <article className="panel-card">
               <p className="eyebrow">Reflection Prompt</p>
               <p>What did you learn from this activity? How can this be applied in real life?</p>
@@ -1149,9 +1209,16 @@ function App() {
                           {modules.map((module) => {
                             const stages = new Set(studentRecords.filter((record) => record.moduleId === module.id).map((record) => record.stage));
                             const done = REQUIRED_STAGES.filter((stage) => stages.has(stage)).length;
+                            const grade = sectionFeedback.find((entry) => entry.studentId === student.id && entry.moduleId === module.id);
                             return (
                               <div className="row-between student-module-row" key={module.id}>
-                                <small>{module.title} - {done}/{REQUIRED_STAGES.length} stages</small>
+                                {done > 0 ? (
+                                  <button type="button" className="text-button module-grade-link" onClick={() => openGrading(student, module.id)}>
+                                    {module.title} - {done}/{REQUIRED_STAGES.length} stages{grade ? ` - Graded${grade.score != null ? ` (${grade.score})` : ""}` : ""}
+                                  </button>
+                                ) : (
+                                  <small>{module.title} - {done}/{REQUIRED_STAGES.length} stages</small>
+                                )}
                                 {done > 0 && <button type="button" className="text-button compact-button" onClick={() => handleResetProgress(student.id, module.id)}>Reset</button>}
                               </div>
                             );
@@ -1168,6 +1235,40 @@ function App() {
             </article>
           </section>
         )}
+
+        {screen === "grade" && gradingStudent && gradingModuleId && (() => {
+          const gradingModule = modules.find((module) => module.id === gradingModuleId);
+          const submissions = sectionRecords.filter((record) => record.userId === gradingStudent.id && record.moduleId === gradingModuleId);
+          return (
+            <section className="screen active">
+              <article className="panel-card">
+                <p className="eyebrow">Grading</p>
+                <h2>{gradingStudent.name}</h2>
+                <p>{gradingModule?.title || "Module"}</p>
+              </article>
+              <article className="panel-card">
+                <p className="eyebrow">Submitted Work</p>
+                <div className="records-list">
+                  {submissions.length ? submissions.slice().reverse().map((record) => (
+                    <article className="record-card" key={record.id}>
+                      <small>{record.stage}</small>
+                      <p>{record.text}</p>
+                    </article>
+                  )) : <p className="muted">No submission found for this module.</p>}
+                </div>
+              </article>
+              <article className="panel-card">
+                <p className="eyebrow">Grade &amp; Feedback</p>
+                <form className="auth-form" onSubmit={handleSubmitFeedback}>
+                  <label className="field-label">Score (0-100, optional)<input type="number" min={0} max={100} value={feedbackScore} onChange={(event) => setFeedbackScore(event.target.value)} /></label>
+                  <label className="field-label">Comment for the student<textarea rows={5} placeholder="What did they do well? What should they improve?" value={feedbackComment} onChange={(event) => setFeedbackComment(event.target.value)} required /></label>
+                  {feedbackFormError && <p className="auth-error" role="alert">{feedbackFormError}</p>}
+                  <button className="primary-button" type="submit">Save Feedback</button>
+                </form>
+              </article>
+            </section>
+          );
+        })()}
       </main>
 
       <nav className="bottom-nav" aria-label="Primary navigation">
@@ -1176,7 +1277,7 @@ function App() {
           const isActive =
             screen === item ||
             (screen === "detail" && item === "modules") ||
-            (screen === "section" && item === "classes") ||
+            ((screen === "section" || screen === "grade") && item === "classes") ||
             (isTeacherPreview && item === "home" && previewFlowScreens.includes(screen));
           return (
             <button key={item} className={isActive ? "active" : ""} onClick={() => goTo(item)}>

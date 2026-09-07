@@ -4,7 +4,7 @@ export type ViewMode = "ar" | "fallback";
 
 export type Stage = "Predict" | "Observe" | "Explain" | "Reflection";
 
-export type Screen = "home" | "modules" | "detail" | "observe" | "explain" | "result" | "settings" | "classes" | "section";
+export type Screen = "home" | "modules" | "detail" | "observe" | "explain" | "result" | "settings" | "classes" | "section" | "grade";
 
 export interface LearningModule {
   id: string;
@@ -52,6 +52,15 @@ export interface ClassProgressRecord {
   mode: ViewMode;
   text: string;
   createdAt: string;
+}
+
+export interface Feedback {
+  id: string;
+  studentId?: string;
+  moduleId: string;
+  score: number | null;
+  comment: string;
+  updatedAt: string;
 }
 
 export interface Section {

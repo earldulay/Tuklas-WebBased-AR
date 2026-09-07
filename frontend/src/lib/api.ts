@@ -1,5 +1,5 @@
 import { clearSession, getToken } from "./auth";
-import type { ActivityRecord, AuthUser, ClassProgressRecord, LearningModule, Section, SectionSummary } from "../types/domain";
+import type { ActivityRecord, AuthUser, ClassProgressRecord, Feedback, LearningModule, Section, SectionSummary } from "../types/domain";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
 
@@ -43,7 +43,7 @@ export function syncRecords(records: ActivityRecord[]) {
 }
 
 export function fetchMyRecords() {
-  return request<{ records: ActivityRecord[] }>("/sync/mine");
+  return request<{ records: ActivityRecord[]; feedback: Feedback[] }>("/sync/mine");
 }
 
 export function login(username: string, password: string) {
@@ -76,7 +76,7 @@ export function listSections() {
 }
 
 export function getSection(sectionId: string) {
-  return request<{ section: Section; students: AuthUser[]; records: ClassProgressRecord[] }>(`/sections/${sectionId}`);
+  return request<{ section: Section; students: AuthUser[]; records: ClassProgressRecord[]; feedback: Feedback[] }>(`/sections/${sectionId}`);
 }
 
 export function createSectionStudent(sectionId: string, username: string, password: string, name: string) {
@@ -90,5 +90,12 @@ export function resetStudentProgress(studentId: string, moduleId?: string) {
   return request<{ deleted: number }>(`/auth/students/${studentId}/reset-progress`, {
     method: "POST",
     body: JSON.stringify(moduleId ? { moduleId } : {}),
+  });
+}
+
+export function submitFeedback(sectionId: string, studentId: string, moduleId: string, score: number | null, comment: string) {
+  return request<{ feedback: Feedback }>(`/sections/${sectionId}/students/${studentId}/modules/${moduleId}/feedback`, {
+    method: "POST",
+    body: JSON.stringify({ score, comment }),
   });
 }

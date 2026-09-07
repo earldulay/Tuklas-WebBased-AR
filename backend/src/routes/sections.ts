@@ -82,12 +82,15 @@ sectionsRouter.get("/:id", async (request, response, next) => {
     });
 
     const studentIds = students.map((student) => student.id);
-    const records = studentIds.length
-      ? await prisma.activityRecord.findMany({
-          where: { userId: { in: studentIds } },
-          orderBy: { createdAt: "desc" },
-        })
-      : [];
+    const [records, feedback] = studentIds.length
+      ? await Promise.all([
+          prisma.activityRecord.findMany({
+            where: { userId: { in: studentIds } },
+            orderBy: { createdAt: "desc" },
+          }),
+          prisma.feedback.findMany({ where: { studentId: { in: studentIds } } }),
+        ])
+      : [[], []];
 
     response.json({
       section,
@@ -100,6 +103,14 @@ sectionsRouter.get("/:id", async (request, response, next) => {
         mode: record.mode,
         text: record.text,
         createdAt: record.createdAt,
+      })),
+      feedback: feedback.map((entry) => ({
+        id: entry.id,
+        studentId: entry.studentId,
+        moduleId: entry.moduleId,
+        score: entry.score,
+        comment: entry.comment,
+        updatedAt: entry.updatedAt,
       })),
     });
   } catch (error) {
@@ -143,6 +154,60 @@ sectionsRouter.post("/:id/students", async (request, response, next) => {
       response.status(409).json({ error: "That username is already taken." });
       return;
     }
+    next(error);
+  }
+});
+
+const feedbackSchema = z.object({
+  score: z.number().int().min(0).max(100).nullable().optional(),
+  comment: z.string().trim().min(1, "Feedback is required.").max(2000),
+});
+
+// One row per (student, module) - saving again updates the existing grade
+// rather than creating a history, since a teacher re-grading a redo should
+// just replace their previous note.
+sectionsRouter.post("/:id/students/:studentId/modules/:moduleId/feedback", async (request, response, next) => {
+  if (!requireDatabase(response)) return;
+
+  try {
+    const section = await loadOwnedSection(request.user!.sub, request.params.id);
+    if (!section) {
+      response.status(404).json({ error: "Section not found." });
+      return;
+    }
+
+    const student = await prisma.user.findFirst({
+      where: { id: request.params.studentId, sectionId: section.id },
+    });
+    if (!student) {
+      response.status(404).json({ error: "Student not found in this section." });
+      return;
+    }
+
+    const payload = feedbackSchema.parse(request.body);
+    const feedback = await prisma.feedback.upsert({
+      where: { studentId_moduleId: { studentId: student.id, moduleId: request.params.moduleId } },
+      update: { score: payload.score ?? null, comment: payload.comment, teacherId: request.user!.sub },
+      create: {
+        studentId: student.id,
+        moduleId: request.params.moduleId,
+        teacherId: request.user!.sub,
+        score: payload.score ?? null,
+        comment: payload.comment,
+      },
+    });
+
+    response.status(201).json({
+      feedback: {
+        id: feedback.id,
+        studentId: feedback.studentId,
+        moduleId: feedback.moduleId,
+        score: feedback.score,
+        comment: feedback.comment,
+        updatedAt: feedback.updatedAt,
+      },
+    });
+  } catch (error) {
     next(error);
   }
 });
