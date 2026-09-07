@@ -331,6 +331,18 @@ function App() {
     };
   }, []);
 
+  // Auto-sync: catches records saved while offline (or in a previous
+  // session) as soon as the device is online and logged in, instead of
+  // relying on the student to remember the manual "Sync Saved Work"
+  // button in Settings. Each Predict/Observe/Explain submission also
+  // triggers an immediate sync of its own, below.
+  useEffect(() => {
+    if (online && user) {
+      syncUnsyncedRecords(records).catch(() => undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, user, records]);
+
   useEffect(() => {
     localStorage.setItem("tuklas-view-mode", viewMode);
   }, [viewMode]);
@@ -373,10 +385,20 @@ function App() {
     setControlB(defaults.controlB);
     setTrialPulse(0);
     setExperimentTrials([]);
-    setSelectedPredictions([]);
     setPredictionNote("");
     setPredictionReview("");
-  }, [activeModule.id]);
+
+    if (isTeacherPreview) {
+      // Teacher Preview answers Predict and Explain correctly up front so a
+      // teacher can walk through the "ideal" run without re-deriving the
+      // science each time. Observe stays fully manual (see below).
+      setSelectedPredictions(activeModule.predictions.map((prediction) => prediction.choices[0]));
+      setEvidence(getObservationModel(activeModule.id, defaults.controlA, defaults.controlB).recordText);
+      setExplanation(activeModule.overview);
+    } else {
+      setSelectedPredictions([]);
+    }
+  }, [activeModule.id, isTeacherPreview]);
 
   function showToast(message: string) {
     setToast(message);
@@ -498,6 +520,30 @@ function App() {
     const next = [...records, record];
     setRecords(next);
     await saveRecord(record);
+    return next;
+  }
+
+  // Pushes any unsynced records to the server. Takes the records array
+  // explicitly (rather than reading the `records` state) so a caller that
+  // just added a record can sync it immediately without waiting for a
+  // re-render. Fails silently - the records stay saved locally either way
+  // and a later sync attempt (manual, reconnect, or next submission) will
+  // pick them up.
+  async function syncUnsyncedRecords(currentRecords: ActivityRecord[]) {
+    if (!navigator.onLine) return currentRecords;
+    const unsynced = currentRecords.filter((record) => !record.syncedAt);
+    if (!unsynced.length) return currentRecords;
+
+    try {
+      const result = await syncRecords(unsynced);
+      const syncedIds = new Set(result.records.map((record) => record.id));
+      const next = currentRecords.map((record) => (syncedIds.has(record.id) ? { ...record, syncedAt: new Date().toISOString() } : record));
+      setRecords(next);
+      await replaceRecords(next);
+      return next;
+    } catch {
+      return currentRecords;
+    }
   }
 
   function markProgress(key: (typeof progressKeys)[number]) {
@@ -540,17 +586,16 @@ function App() {
   }
 
   async function handleSync() {
-    try {
-      const unsynced = records.filter((record) => !record.syncedAt);
-      const result = await syncRecords(unsynced);
-      const syncedIds = new Set(result.records.map((record) => record.id));
-      const next = records.map((record) => (syncedIds.has(record.id) ? { ...record, syncedAt: new Date().toISOString() } : record));
-      setRecords(next);
-      await replaceRecords(next);
-      showToast(`${result.records.length} records synced.`);
-    } catch {
-      showToast("Sync failed. Records are still saved offline.");
+    const before = records.filter((record) => !record.syncedAt).length;
+    if (!before) {
+      showToast("Nothing to sync - everything is already saved to your account.");
+      return;
     }
+    const next = await syncUnsyncedRecords(records);
+    const after = next.filter((record) => !record.syncedAt).length;
+    if (after === 0) showToast(`${before} record${before === 1 ? "" : "s"} synced.`);
+    else if (after < before) showToast(`${before - after} of ${before} records synced. The rest will retry automatically.`);
+    else showToast("Sync failed. Records are still saved offline and will retry automatically.");
   }
 
   function getExperimentTrial() {
@@ -756,7 +801,8 @@ function App() {
                 const answers = activeModule.predictions.map((prediction, index) => `${index + 1}. ${prediction.question}\nAnswer: ${selectedPredictions[index]}`).join("\n\n");
                 const text = `${answers}${predictionNote.trim() ? `\n\nReasoning: ${predictionNote.trim()}` : ""}`;
                 if (!isTeacherPreview) {
-                  await addRecord("Predict", text);
+                  const next = await addRecord("Predict", text);
+                  await syncUnsyncedRecords(next);
                   markProgress("prediction");
                 }
                 setPredictionReview(text);
@@ -853,7 +899,8 @@ function App() {
                 setTrialPulse((current) => current + 1);
                 setExperimentTrials((current) => [...current, getExperimentTrial()]);
                 if (!isTeacherPreview) {
-                  await addRecord("Observe", `Mode: ${viewMode}; ${observationModel.recordText}`);
+                  const next = await addRecord("Observe", `Mode: ${viewMode}; ${observationModel.recordText}`);
+                  await syncUnsyncedRecords(next);
                   markProgress("observation");
                 }
               }}>Run Trial</button>
@@ -873,7 +920,8 @@ function App() {
               <button className="primary-button" onClick={async () => {
                 if (!evidence.trim() || !explanation.trim()) return showToast("Add evidence and a scientific explanation.");
                 if (!isTeacherPreview) {
-                  await addRecord("Explain", `Evidence: ${evidence.trim()} / Explanation: ${explanation.trim()}`);
+                  const next = await addRecord("Explain", `Evidence: ${evidence.trim()} / Explanation: ${explanation.trim()}`);
+                  await syncUnsyncedRecords(next);
                   markProgress("explanation");
                   markProgress("result");
                 }
@@ -897,7 +945,10 @@ function App() {
               <textarea rows={4} placeholder="Write your reflection..." value={reflection} onChange={(event) => setReflection(event.target.value)} />
               <button className="secondary-button" onClick={async () => {
                 if (!reflection.trim()) return showToast("Write a reflection before saving.");
-                if (!isTeacherPreview) await addRecord("Reflection", reflection.trim());
+                if (!isTeacherPreview) {
+                  const next = await addRecord("Reflection", reflection.trim());
+                  await syncUnsyncedRecords(next);
+                }
                 setReflection("");
                 showToast(isTeacherPreview ? "Reflection previewed (not saved)." : "Reflection saved.");
               }}>Save Reflection</button>
