@@ -230,6 +230,7 @@ function App() {
   const [offlineStatus, setOfflineStatus] = useState("Cache app shell, six modules, marker, and local records support.");
   const [deviceStatus, setDeviceStatus] = useState("Camera, WebGL, service worker, and storage readiness.");
   const [cameraStatus, setCameraStatus] = useState("Camera is off.");
+  const [cameraReady, setCameraReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
 
@@ -301,6 +302,7 @@ function App() {
     cameraStreamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setCameraStatus("Camera is off.");
+    setCameraReady(false);
   }
 
   async function startCamera() {
@@ -335,11 +337,13 @@ function App() {
       }
       const message = "Camera is live.";
       setCameraStatus(message);
+      setCameraReady(true);
       showToast(message);
     } catch (error) {
       const blocked = error instanceof DOMException && error.name === "NotAllowedError";
       const message = blocked ? "Camera permission was blocked." : "Camera failed to start.";
       setCameraStatus(message);
+      setCameraReady(false);
       showToast(message);
     }
   }
@@ -360,6 +364,14 @@ function App() {
     setRole(nextRole);
     localStorage.setItem("tuklas-role", nextRole);
     showToast(nextRole === "teacher" ? "Teacher / Demo Mode opened." : "Student Mode opened.");
+  }
+
+  function logout() {
+    stopCamera();
+    setRole("");
+    setScreen("home");
+    setHistory([]);
+    localStorage.removeItem("tuklas-role");
   }
 
   async function addRecord(stage: Stage, text: string) {
@@ -442,27 +454,45 @@ function App() {
     settings: ["Setup", "Device and Saved Work"],
   };
 
-  return (
-    <div className={role ? `${role}-mode` : "login-open"}>
-      {!role && (
-        <section className="login-screen" aria-labelledby="loginTitle">
-          <div className="login-card">
-            <p className="eyebrow">Marker-Based WebAR PWA</p>
-            <h1 id="loginTitle">Tuklas AR Science Lab</h1>
-            <p>Predict, observe, and explain Grade 9 science concepts using a phone camera, reusable marker, and offline-ready records.</p>
+  if (!role) {
+    return (
+      <main className="landing-screen" aria-labelledby="landingTitle">
+        <section className="landing-hero">
+          <p className="eyebrow">Grade 9 WebAR Science Learning</p>
+          <h1 id="landingTitle">Tuklas AR Science Lab</h1>
+          <p>Predict, observe, and explain science concepts using camera-based classroom activities and offline-ready learning records.</p>
+          <div className="landing-actions">
             <button className="primary-button" onClick={() => applyRole("student")}>Continue as Student</button>
             <button className="secondary-button" onClick={() => applyRole("teacher")}>Open Teacher Review</button>
           </div>
         </section>
-      )}
+        <section className="landing-flow" aria-label="Learning flow">
+          {["Predict", "Observe", "Explain"].map((step) => <article key={step}><strong>{step}</strong></article>)}
+        </section>
+        <section className="landing-marker">
+          <div>
+            <p className="eyebrow">Reusable Group Marker</p>
+            <h2>One printed marker per group</h2>
+            <p>Students use the same marker across lessons during camera observation.</p>
+          </div>
+          <a className="marker-preview" href="/assets/tuklas-marker.svg" target="_blank" rel="noreferrer" aria-label="Open printable Tuklas AR marker"><span>TUKLAS</span></a>
+        </section>
+      </main>
+    );
+  }
 
+  return (
+    <div className={`${role}-mode`}>
       <header className="app-header">
         <button className={`back-button ${history.length > 0 && screen !== "home" ? "visible" : ""}`} onClick={goBack} aria-label="Go back">&lt;</button>
         <div>
           <p className="eyebrow">{titles[screen][0]}</p>
           <h1>{titles[screen][1]}</h1>
         </div>
-        <button className="status-button">{online ? "Online" : "Offline"}</button>
+        <div className="header-actions">
+          <button className="status-button">{online ? "Online" : "Offline"}</button>
+          <button className="logout-button" onClick={logout}>Logout</button>
+        </div>
       </header>
 
       <main className="screen-stack">
@@ -584,7 +614,8 @@ function App() {
               <div className="data-readout">
                 {observationModel.readouts.map((readout) => <span key={readout.label}>{readout.label} <strong>{readout.value}</strong></span>)}
               </div>
-              <button className="primary-button" onClick={async () => {
+              <button className="primary-button" disabled={viewMode === "ar" && !cameraReady} onClick={async () => {
+                if (viewMode === "ar" && !cameraReady) return showToast("Start the camera before saving an AR trial.");
                 setTrialPulse((current) => current + 1);
                 await addRecord("Observe", `Mode: ${viewMode}; ${observationModel.recordText}`);
                 markProgress("observation");

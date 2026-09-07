@@ -29,7 +29,7 @@ body {
 }
 
 body.login-open {
-  overflow: hidden;
+  padding-bottom: 0;
 }
 
 #root {
@@ -44,6 +44,11 @@ textarea {
 
 button {
   -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 h1,
@@ -83,35 +88,71 @@ small {
   color: var(--muted);
 }
 
-.login-screen {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
+.landing-screen {
   display: grid;
-  align-items: center;
-  padding: calc(28px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom));
+  gap: 14px;
+  min-height: 100vh;
+  padding: calc(22px + env(safe-area-inset-top)) 16px calc(22px + env(safe-area-inset-bottom));
   background:
     linear-gradient(135deg, rgba(7, 52, 111, 0.96), rgba(15, 76, 154, 0.9)),
     repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.08) 0 2px, transparent 2px 30px);
 }
 
-.login-screen.hidden {
-  display: none;
-}
-
-.login-card {
+.landing-hero,
+.landing-flow,
+.landing-marker {
   width: min(420px, 100%);
   margin: 0 auto;
+  border-radius: 8px;
+}
+
+.landing-hero {
+  align-self: end;
   padding: 28px 22px;
   border: 1px solid rgba(255, 255, 255, 0.42);
-  border-radius: 8px;
   color: #fff;
   text-align: left;
   background: rgba(7, 31, 68, 0.9);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
 }
 
-.login-card p {
+.landing-hero p {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.landing-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.landing-flow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.landing-flow article {
+  display: grid;
+  place-items: center;
+  min-height: 58px;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 8px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.landing-marker {
+  display: grid;
+  grid-template-columns: 1fr 104px;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  color: #fff;
+  background: rgba(7, 31, 68, 0.68);
+}
+
+.landing-marker p {
   color: rgba(255, 255, 255, 0.78);
 }
 
@@ -145,11 +186,6 @@ small {
   white-space: nowrap;
 }
 
-.login-card .primary-button,
-.login-card .secondary-button {
-  margin-top: 12px;
-}
-
 .app-header {
   position: sticky;
   top: 0;
@@ -165,8 +201,14 @@ small {
   background: linear-gradient(100deg, var(--blue-dark), var(--blue));
 }
 
+.header-actions {
+  display: flex;
+  gap: 6px;
+}
+
 .back-button,
-.status-button {
+.status-button,
+.logout-button {
   min-height: 38px;
   border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: 999px;
@@ -186,6 +228,11 @@ small {
 
 .status-button {
   min-width: 74px;
+  padding: 0 10px;
+  font-size: 0.82rem;
+}
+
+.logout-button {
   padding: 0 10px;
   font-size: 0.82rem;
 }
@@ -926,7 +973,21 @@ input[type="range"] {
     grid-template-columns: 34px 1fr auto;
   }
 
+  .header-actions {
+    display: grid;
+  }
+
+  .status-button,
+  .logout-button {
+    min-height: 30px;
+    font-size: 0.72rem;
+  }
+
   .marker-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-marker {
     grid-template-columns: 1fr;
   }
 
