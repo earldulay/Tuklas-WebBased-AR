@@ -37,17 +37,23 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
     mount.appendChild(renderer.domElement);
 
     const trackedRoot = new THREE.Group();
-    trackedRoot.scale.setScalar(viewMode === "ar" ? 0.18 : 1);
     scene.add(trackedRoot);
 
+    // AR.js writes the marker matrix to trackedRoot every frame. Keep model
+    // scale and placement on a child so tracking cannot overwrite them.
+    const modelRoot = new THREE.Group();
+    modelRoot.scale.setScalar(viewMode === "ar" ? 0.18 : 1);
+    modelRoot.position.y = viewMode === "ar" ? 0.08 : 0;
+    trackedRoot.add(modelRoot);
+
     const light = new THREE.HemisphereLight(0xffffff, 0x24324d, 2.5);
-    trackedRoot.add(light);
+    modelRoot.add(light);
 
     const material = (color: number, emissive = 0) => new THREE.MeshStandardMaterial({ color, emissive, roughness: 0.55 });
     const mesh = (geometry: THREE.BufferGeometry, color: number, x: number, y: number, z = 0) => {
       const item = new THREE.Mesh(geometry, material(color));
       item.position.set(x, y, z);
-      trackedRoot.add(item);
+      modelRoot.add(item);
       return item;
     };
 
@@ -66,13 +72,13 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
       mesh(new THREE.BoxGeometry(5.8, 0.08, 1.2), 0x7c8ba3, 0, -0.42);
       cart = mesh(new THREE.BoxGeometry(1.1, 0.55, 0.8), 0xd71920, 0, 0);
       forceArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(-2.7, 0.25, 0), 1, 0xf7c600, 0.28, 0.15);
-      trackedRoot.add(forceArrow);
+      modelRoot.add(forceArrow);
       for (let index = 0; index < 4; index += 1) massBlocks.push(mesh(new THREE.BoxGeometry(0.5, 0.12, 0.45), 0x24324d, 0, 0.38 + index * 0.13));
     } else if (moduleId === "electricity") {
       const current = controlA / controlB;
       const wire = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.045, 10, 64), material(0x29384f));
       wire.rotation.x = Math.PI / 2;
-      trackedRoot.add(wire);
+      modelRoot.add(wire);
       mesh(new THREE.BoxGeometry(0.75, 0.9, 0.45), 0x24324d, -1.75, 0);
       bulb = mesh(new THREE.SphereGeometry(0.46, 24, 16), 0xffd64d, 1.75, 0);
       (bulb.material as THREE.MeshStandardMaterial).emissive.setHex(0xffb000);
@@ -83,10 +89,9 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
         animated.push(electron);
       }
     } else if (moduleId === "materials") {
-      const gas = Math.min(controlA, controlB);
       const vessel = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.65, 1.8, 32, 1, true), new THREE.MeshStandardMaterial({ color: 0xa9ddff, transparent: true, opacity: 0.42, side: THREE.DoubleSide }));
       vessel.position.y = 0.1;
-      trackedRoot.add(vessel);
+      modelRoot.add(vessel);
       mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.65, 32), 0x36a6d9, 0, -0.3);
       for (let index = 0; index < 20; index += 1) {
         const bubble = mesh(new THREE.SphereGeometry(0.07 + (index % 3) * 0.02, 10, 8), 0xffffff, ((index * 37) % 10 - 5) / 10, -0.2 + (index % 7) * 0.2);
@@ -114,14 +119,14 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
       const orbit = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.025, 8, 64), material(0x7c8ba3));
       orbit.rotation.x = Math.PI / 2;
       orbit.position.x = -0.1;
-      trackedRoot.add(orbit);
+      modelRoot.add(orbit);
       const orbitAngle = (controlB * Math.PI) / 6;
       earth = mesh(new THREE.SphereGeometry(0.48, 24, 16), 0x1676c2, -0.1 + Math.cos(orbitAngle) * 1.8, 0, Math.sin(orbitAngle) * 1.8);
       earth.rotation.z = THREE.MathUtils.degToRad(controlA);
       earthAxis = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.35, 8), material(0xffffff));
       earthAxis.rotation.z = earth.rotation.z;
       earthAxis.position.copy(earth.position);
-      trackedRoot.add(earthAxis);
+      modelRoot.add(earthAxis);
       animated.push(earth);
     }
 
