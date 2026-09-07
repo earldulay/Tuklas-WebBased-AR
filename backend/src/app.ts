@@ -3,6 +3,7 @@ import express, { type ErrorRequestHandler } from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import { ZodError } from "zod";
+import { authRouter } from "./routes/auth.js";
 import { healthRouter } from "./routes/health.js";
 import { modulesRouter } from "./routes/modules.js";
 import { syncRouter } from "./routes/sync.js";
@@ -32,6 +33,7 @@ export function createApp() {
   app.use(morgan("dev"));
 
   app.use("/api/health", healthRouter);
+  app.use("/api/auth", authRouter);
   app.use("/api/modules", modulesRouter);
   app.use("/api/sync", syncRouter);
 

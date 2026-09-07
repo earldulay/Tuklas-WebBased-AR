@@ -26,6 +26,25 @@ enum ActivityStage {
   Reflection
 }
 
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  role         Role
+  name         String
+  section      String?
+  createdAt    DateTime @default(now())
+
+  createdById String?
+  createdBy   User?   @relation("TeacherStudents", fields: [createdById], references: [id])
+  students    User[]  @relation("TeacherStudents")
+
+  records ActivityRecord[]
+
+  @@index([role])
+  @@index([createdById])
+}
+
 model Module {
   id        String   @id
   icon      String
@@ -45,6 +64,8 @@ model Module {
 
 model ActivityRecord {
   id        String        @id
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
   role      Role
   moduleId  String
   module    Module        @relation(fields: [moduleId], references: [id])
@@ -57,4 +78,5 @@ model ActivityRecord {
   @@index([moduleId])
   @@index([role])
   @@index([createdAt])
+  @@index([userId])
 }

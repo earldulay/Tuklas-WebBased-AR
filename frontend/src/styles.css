@@ -1250,3 +1250,55 @@ input[type="range"] {
     left: 130px;
   }
 }
+
+.auth-card {
+  width: min(420px, 100%);
+  margin: 0 auto;
+  padding: 18px;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.auth-tabs button {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  background: #fff;
+  font-weight: 800;
+}
+
+.auth-tabs button.active {
+  color: #fff;
+  border-color: var(--blue);
+  background: var(--blue);
+}
+
+.auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-form.compact-form {
+  margin-bottom: 14px;
+}
+
+.auth-error {
+  margin: 0;
+  color: #b3261e;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.auth-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: center;
+}

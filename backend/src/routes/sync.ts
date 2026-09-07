@@ -1,12 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
 import { modules, toPersistedModule } from "../data/modules.js";
+import { requireAuth } from "../lib/auth.js";
 import { hasDatabaseUrl } from "../lib/database.js";
 import { prisma } from "../lib/prisma.js";
 
 const recordSchema = z.object({
   id: z.string().min(1),
-  role: z.enum(["student", "teacher"]),
   moduleId: z.string().min(1),
   mode: z.enum(["ar", "fallback"]),
   stage: z.enum(["Predict", "Observe", "Explain", "Reflection"]),
@@ -20,7 +20,7 @@ const syncSchema = z.object({
 
 export const syncRouter = Router();
 
-syncRouter.post("/", async (request, response, next) => {
+syncRouter.post("/", requireAuth, async (request, response, next) => {
   if (!hasDatabaseUrl()) {
     response.status(503).json({ error: "DATABASE_URL is required before syncing records." });
     return;
@@ -28,6 +28,9 @@ syncRouter.post("/", async (request, response, next) => {
 
   try {
     const payload = syncSchema.parse(request.body);
+    // The authenticated user, not the client payload, decides who a record
+    // belongs to and what role it was submitted under.
+    const { sub: userId, role } = request.user!;
 
     await Promise.all(
       modules.map((module) => {
@@ -45,7 +48,8 @@ syncRouter.post("/", async (request, response, next) => {
         prisma.activityRecord.upsert({
           where: { id: record.id },
           update: {
-            role: record.role,
+            userId,
+            role,
             moduleId: record.moduleId,
             mode: record.mode,
             stage: record.stage,
@@ -54,7 +58,8 @@ syncRouter.post("/", async (request, response, next) => {
           },
           create: {
             id: record.id,
-            role: record.role,
+            userId,
+            role,
             moduleId: record.moduleId,
             mode: record.mode,
             stage: record.stage,

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { fetchModules, syncRecords } from "./lib/api";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { ApiError, createStudent, fetchModules, listStudents, login as apiLogin, registerTeacher, syncRecords } from "./lib/api";
+import { clearSession, getStoredUser, setSession } from "./lib/auth";
 import { clearRecords, loadProgress, loadRecords, replaceRecords, saveProgress, saveRecord } from "./lib/storage";
 import { modules as fallbackModules } from "./data/modules";
-import type { ActivityRecord, LearningModule, ProgressState, Role, Screen, Stage, ViewMode } from "./types/domain";
+import type { ActivityRecord, AuthUser, LearningModule, ProgressState, Role, Screen, Stage, ViewMode } from "./types/domain";
 import { ScienceScene } from "./components/ScienceScene";
 import { Activity, CircuitBoard, Download, Earth, Microscope, Printer, Thermometer, type LucideIcon } from "lucide-react";
 
@@ -234,7 +235,22 @@ function ActivityVisual({
 }
 
 function App() {
-  const [role, setRole] = useState<Role | "">(() => (localStorage.getItem("tuklas-role") as Role | null) || "");
+  const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
+  const role: Role | "" = user?.role ?? "";
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [signupUsername, setSignupUsername] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [signupName, setSignupName] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [students, setStudents] = useState<AuthUser[]>([]);
+  const [studentUsername, setStudentUsername] = useState("");
+  const [studentPassword, setStudentPassword] = useState("");
+  const [studentName, setStudentName] = useState("");
+  const [studentSection, setStudentSection] = useState("");
+  const [studentFormError, setStudentFormError] = useState("");
   const [screen, setScreen] = useState<Screen>("home");
   const [history, setHistory] = useState<Screen[]>([]);
   const [modules, setModules] = useState<LearningModule[]>(fallbackModules);
@@ -296,6 +312,12 @@ function App() {
   }, [viewMode]);
 
   useEffect(() => {
+    if (screen === "settings" && role === "teacher") {
+      listStudents().then((result) => setStudents(result.students)).catch(() => undefined);
+    }
+  }, [screen, role]);
+
+  useEffect(() => {
     document.body.classList.toggle("login-open", !role);
   }, [role]);
 
@@ -327,17 +349,65 @@ function App() {
     goTo(previous, false);
   }
 
-  function applyRole(nextRole: Role) {
-    setRole(nextRole);
-    localStorage.setItem("tuklas-role", nextRole);
-    showToast(nextRole === "teacher" ? "Teacher / Demo Mode opened." : "Student Mode opened.");
+  async function handleLogin(event: FormEvent) {
+    event.preventDefault();
+    setAuthError("");
+    setAuthLoading(true);
+    try {
+      const result = await apiLogin(loginUsername.trim(), loginPassword);
+      setSession(result.token, result.user);
+      setUser(result.user);
+      setLoginPassword("");
+      showToast(result.user.role === "teacher" ? "Teacher Mode opened." : "Student Mode opened.");
+    } catch (error) {
+      setAuthError(error instanceof ApiError ? error.message : "Login failed. Check your connection.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleTeacherSignup(event: FormEvent) {
+    event.preventDefault();
+    setAuthError("");
+    setAuthLoading(true);
+    try {
+      const result = await registerTeacher(signupUsername.trim(), signupPassword, signupName.trim());
+      setSession(result.token, result.user);
+      setUser(result.user);
+      setSignupPassword("");
+      showToast("Teacher account created.");
+    } catch (error) {
+      setAuthError(error instanceof ApiError ? error.message : "Sign up failed. Check your connection.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleCreateStudent(event: FormEvent) {
+    event.preventDefault();
+    setStudentFormError("");
+    if (!studentUsername.trim() || !studentPassword || !studentName.trim()) {
+      setStudentFormError("Username, password, and name are required.");
+      return;
+    }
+    try {
+      const result = await createStudent(studentUsername.trim(), studentPassword, studentName.trim(), studentSection.trim());
+      setStudents((current) => [result.user, ...current]);
+      setStudentUsername("");
+      setStudentPassword("");
+      setStudentName("");
+      setStudentSection("");
+      showToast(`Student account "${result.user.username}" created.`);
+    } catch (error) {
+      setStudentFormError(error instanceof ApiError ? error.message : "Could not create student account.");
+    }
   }
 
   function logout() {
-    setRole("");
+    clearSession();
+    setUser(null);
     setScreen("home");
     setHistory([]);
-    localStorage.removeItem("tuklas-role");
   }
 
   async function addRecord(stage: Stage, text: string) {
@@ -427,17 +497,40 @@ function App() {
     settings: ["Setup", "Device and Saved Work"],
   };
 
-  if (!role) {
+  if (!user) {
     return (
       <main className="landing-screen" aria-labelledby="landingTitle">
         <section className="landing-hero">
           <p className="eyebrow">Grade 9 WebAR Science Learning</p>
           <h1 id="landingTitle">Tuklas AR Science Lab</h1>
           <p>Predict, observe, and explain science concepts using camera-based classroom activities and offline-ready learning records.</p>
-          <div className="landing-actions">
-            <button className="primary-button" onClick={() => applyRole("student")}>Continue as Student</button>
-            <button className="secondary-button" onClick={() => applyRole("teacher")}>Open Teacher Mode</button>
+        </section>
+        <section className="auth-card panel-card">
+          <div className="auth-tabs">
+            <button type="button" className={authMode === "login" ? "active" : ""} onClick={() => { setAuthMode("login"); setAuthError(""); }}>Log In</button>
+            <button type="button" className={authMode === "signup" ? "active" : ""} onClick={() => { setAuthMode("signup"); setAuthError(""); }}>Teacher Sign Up</button>
           </div>
+
+          {authMode === "login" && (
+            <form className="auth-form" onSubmit={handleLogin}>
+              <label className="field-label">Username<input type="text" autoComplete="username" value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} required /></label>
+              <label className="field-label">Password<input type="password" autoComplete="current-password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} required /></label>
+              {authError && <p className="auth-error" role="alert">{authError}</p>}
+              <button className="primary-button" type="submit" disabled={authLoading}>{authLoading ? "Logging in..." : "Log In"}</button>
+              <p className="auth-hint">Students: ask your teacher for a username and password.</p>
+            </form>
+          )}
+
+          {authMode === "signup" && (
+            <form className="auth-form" onSubmit={handleTeacherSignup}>
+              <label className="field-label">Full name<input type="text" autoComplete="name" value={signupName} onChange={(event) => setSignupName(event.target.value)} required /></label>
+              <label className="field-label">Username<input type="text" autoComplete="username" value={signupUsername} onChange={(event) => setSignupUsername(event.target.value)} required minLength={3} /></label>
+              <label className="field-label">Password<input type="password" autoComplete="new-password" value={signupPassword} onChange={(event) => setSignupPassword(event.target.value)} required minLength={8} /></label>
+              {authError && <p className="auth-error" role="alert">{authError}</p>}
+              <button className="primary-button" type="submit" disabled={authLoading}>{authLoading ? "Creating account..." : "Create Teacher Account"}</button>
+              <p className="auth-hint">Teacher accounts can create student logins after signing in.</p>
+            </form>
+          )}
         </section>
         <section className="landing-flow" aria-label="Learning flow">
           {["Predict", "Observe", "Explain"].map((step) => <article key={step}><strong>{step}</strong></article>)}
@@ -699,6 +792,27 @@ function App() {
             <button className="settings-row" onClick={handleSync}><span><strong>Sync Saved Work</strong><small>{records.filter((record) => !record.syncedAt).length} records waiting to sync.</small></span><span aria-hidden="true">&gt;</span></button>
             <button className="settings-row" onClick={checkDevice}><span><strong>Device Check</strong><small>{deviceStatus}</small></span><span aria-hidden="true">&gt;</span></button>
             <article className="panel-card offline-checklist"><p className="eyebrow">Offline Setup</p><ol><li>Open this HTTPS app while connected.</li><li>Tap Prepare for Offline Use.</li><li>Add the app to the home screen.</li><li>Reopen in airplane mode and run one trial.</li></ol></article>
+            {role === "teacher" && (
+              <article className="panel-card manage-students">
+                <div className="row-between"><h2>Manage Students</h2></div>
+                <form className="auth-form compact-form" onSubmit={handleCreateStudent}>
+                  <label className="field-label">Full name<input type="text" value={studentName} onChange={(event) => setStudentName(event.target.value)} required /></label>
+                  <label className="field-label">Username<input type="text" value={studentUsername} onChange={(event) => setStudentUsername(event.target.value)} required minLength={3} /></label>
+                  <label className="field-label">Password<input type="password" value={studentPassword} onChange={(event) => setStudentPassword(event.target.value)} required minLength={8} /></label>
+                  <label className="field-label">Section (optional)<input type="text" value={studentSection} onChange={(event) => setStudentSection(event.target.value)} /></label>
+                  {studentFormError && <p className="auth-error" role="alert">{studentFormError}</p>}
+                  <button className="secondary-button" type="submit">Add Student</button>
+                </form>
+                <div className="records-list">
+                  {students.length ? students.map((student) => (
+                    <article className="record-card" key={student.id}>
+                      <small>{student.username}{student.section ? ` / ${student.section}` : ""}</small>
+                      <p>{student.name}</p>
+                    </article>
+                  )) : <p className="muted">No student accounts created yet.</p>}
+                </div>
+              </article>
+            )}
             <article className="panel-card teacher-tools">
               <div className="row-between"><h2>Saved Work</h2><button className="text-button compact-button" onClick={async () => { await clearRecords(); setRecords([]); showToast("Saved progress cleared."); }}>Clear</button></div>
               <div className="records-list">

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { modules, toPersistedModule } from "../data/modules.js";
+import { requireAuth, requireRole } from "../lib/auth.js";
 import { hasDatabaseUrl } from "../lib/database.js";
 import { prisma } from "../lib/prisma.js";
 
@@ -20,7 +21,7 @@ modulesRouter.get("/", async (_request, response, next) => {
   }
 });
 
-modulesRouter.post("/seed", async (_request, response, next) => {
+modulesRouter.post("/seed", requireAuth, requireRole("teacher"), async (_request, response, next) => {
   if (!hasDatabaseUrl()) {
     response.status(503).json({ error: "DATABASE_URL is required before seeding modules." });
     return;

@@ -35,3 +35,12 @@ export interface ActivityRecord {
 }
 
 export type ProgressState = Record<string, Partial<Record<"prediction" | "observation" | "explanation" | "result", boolean>>>;
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  role: Role;
+  name: string;
+  section: string | null;
+  createdAt: string;
+}
