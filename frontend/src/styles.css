@@ -489,6 +489,7 @@ input[type="range"] {
   left: 28px;
   z-index: 2;
   height: 10px;
+  cursor: pointer;
   border-radius: 999px;
   background: #7c8ba3;
 }
@@ -530,6 +531,20 @@ input[type="range"] {
   background: var(--red);
   z-index: 3;
   transition: transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.draggable-cart {
+  cursor: grab;
+  touch-action: none;
+}
+
+.draggable-cart:active {
+  cursor: grabbing;
+}
+
+.draggable-cart:focus-visible {
+  outline: 4px solid rgba(247, 198, 0, 0.7);
+  outline-offset: 4px;
 }
 
 .cart::before,
@@ -585,6 +600,35 @@ input[type="range"] {
   border-radius: 999px 999px 8px 8px;
   transform: rotate(-18deg);
   background: #fff;
+}
+
+.mass-stack {
+  position: absolute;
+  right: 18px;
+  top: 18px;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: repeat(4, 34px);
+  gap: 6px;
+}
+
+.mass-stack button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 2px solid #172033;
+  border-radius: 6px;
+  color: #172033;
+  cursor: pointer;
+  background: #fff;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.mass-stack button.active {
+  color: #fff;
+  background: var(--blue);
 }
 
 .activity-visual {
@@ -925,6 +969,40 @@ input[type="range"] {
   background: transparent;
   font-size: 0.76rem;
   font-weight: 800;
+}
+
+.motion-trials {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  overflow-x: auto;
+}
+
+.motion-trial-header,
+.motion-trial-row {
+  display: grid;
+  grid-template-columns: 48px 72px 72px 126px 104px;
+  gap: 6px;
+  min-width: 450px;
+  align-items: center;
+}
+
+.motion-trial-header span,
+.motion-trial-row span {
+  min-height: 34px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fbff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.motion-trial-header span {
+  color: #fff;
+  border-color: var(--blue);
+  background: var(--blue);
 }
 
 .bottom-nav button.active {

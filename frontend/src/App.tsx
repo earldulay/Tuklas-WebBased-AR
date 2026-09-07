@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchModules, syncRecords } from "./lib/api";
 import { clearRecords, loadProgress, loadRecords, replaceRecords, saveProgress, saveRecord } from "./lib/storage";
 import { modules as fallbackModules } from "./data/modules";
@@ -35,6 +35,14 @@ interface ObservationModel {
   };
   readouts: { label: string; value: string }[];
   recordText: string;
+}
+
+interface MotionTrial {
+  id: number;
+  force: number;
+  mass: number;
+  acceleration: number;
+  distance: number;
 }
 
 function effectLevel(value: number) {
@@ -143,17 +151,70 @@ function getObservationDefaults(moduleId: string) {
   return { controlA: 2, controlB: 1 };
 }
 
-function ActivityVisual({ moduleId, controlA, controlB, trialPulse }: { moduleId: string; controlA: number; controlB: number; trialPulse: number }) {
+function ActivityVisual({
+  moduleId,
+  controlA,
+  controlB,
+  trialPulse,
+  onControlAChange,
+  onControlBChange,
+}: {
+  moduleId: string;
+  controlA: number;
+  controlB: number;
+  trialPulse: number;
+  onControlAChange?: (value: number) => void;
+  onControlBChange?: (value: number) => void;
+}) {
+  const trackRef = useRef<HTMLDivElement | null>(null);
+
   if (moduleId === "motion") {
     const acceleration = controlA / controlB;
     const cartDistance = Math.min(210, 26 + acceleration * 46);
+    const setForceFromPointer = (clientX: number) => {
+      const track = trackRef.current;
+      if (!track || !onControlAChange) return;
+      const bounds = track.getBoundingClientRect();
+      const ratio = Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width));
+      onControlAChange(Math.round(ratio * 6));
+    };
+
     return (
       <>
         <ScienceScene acceleration={acceleration} force={controlA} mass={controlB} viewMode="fallback" />
-        <div className="track" />
-        <div className="cart" style={{ transform: `translateX(${trialPulse ? cartDistance : 0}px)` }}><span>{controlB} kg</span></div>
+        <div className="track" ref={trackRef} onPointerDown={(event) => setForceFromPointer(event.clientX)} />
+        <div
+          className="cart draggable-cart"
+          role="slider"
+          aria-label="Force"
+          aria-valuemin={0}
+          aria-valuemax={6}
+          aria-valuenow={controlA}
+          tabIndex={0}
+          style={{ transform: `translateX(${trialPulse ? cartDistance : Math.max(0, controlA * 16)}px)` }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight") onControlAChange?.(Math.min(6, controlA + 1));
+            if (event.key === "ArrowLeft") onControlAChange?.(Math.max(0, controlA - 1));
+          }}
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setForceFromPointer(event.clientX);
+          }}
+          onPointerMove={(event) => {
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) setForceFromPointer(event.clientX);
+          }}
+        >
+          <span>{controlB} kg</span>
+        </div>
         <div className="force-arrow" style={{ transform: `scaleX(${Math.max(0.2, controlA / 3)})` }} />
         <div className="hand" aria-hidden="true" />
+        <div className="mass-stack" aria-label="Mass blocks">
+          {[1, 2, 3, 4].map((mass) => (
+            <button className={controlB === mass ? "active" : ""} key={mass} onClick={() => onControlBChange?.(mass)}>
+              {mass}
+            </button>
+          ))}
+        </div>
       </>
     );
   }
@@ -234,6 +295,7 @@ function App() {
   const [controlA, setControlA] = useState(2);
   const [controlB, setControlB] = useState(1);
   const [trialPulse, setTrialPulse] = useState(0);
+  const [motionTrials, setMotionTrials] = useState<MotionTrial[]>([]);
   const [toast, setToast] = useState("");
   const [online, setOnline] = useState(navigator.onLine);
   const [offlineStatus, setOfflineStatus] = useState("Cache app shell, six modules, marker, and local records support.");
@@ -287,6 +349,7 @@ function App() {
     setControlA(defaults.controlA);
     setControlB(defaults.controlB);
     setTrialPulse(0);
+    if (activeModule.id !== "motion") setMotionTrials([]);
   }, [activeModule.id]);
 
   function showToast(message: string) {
@@ -387,6 +450,17 @@ function App() {
     } catch {
       showToast("Sync failed. Records are still saved offline.");
     }
+  }
+
+  function getMotionTrial() {
+    const acceleration = controlA / controlB;
+    return {
+      id: motionTrials.length + 1,
+      force: controlA,
+      mass: controlB,
+      acceleration,
+      distance: 0.5 * acceleration * 2 ** 2,
+    };
   }
 
   const titles: Record<Screen, [string, string]> = {
@@ -546,7 +620,16 @@ function App() {
                     onArStatus={setCameraStatus}
                   />
                 )}
-                {viewMode === "fallback" && <ActivityVisual moduleId={activeModule.id} controlA={controlA} controlB={controlB} trialPulse={trialPulse} />}
+                {viewMode === "fallback" && (
+                  <ActivityVisual
+                    moduleId={activeModule.id}
+                    controlA={controlA}
+                    controlB={controlB}
+                    trialPulse={trialPulse}
+                    onControlAChange={setControlA}
+                    onControlBChange={setControlB}
+                  />
+                )}
               </div>
               {viewMode === "ar" && (
                 <>
@@ -558,15 +641,30 @@ function App() {
               <p className="eyebrow">Observation Prompt</p>
               <p>{activeModule.observe}</p>
               <div className="control-grid">
-                <label>{observationModel.controlA.label}<input type="range" min={observationModel.controlA.min} max={observationModel.controlA.max} step={observationModel.controlA.step} value={controlA} onChange={(event) => setControlA(Number(event.target.value))} /></label>
-                <label>{observationModel.controlB.label}<input type="range" min={observationModel.controlB.min} max={observationModel.controlB.max} step={observationModel.controlB.step} value={controlB} onChange={(event) => setControlB(Number(event.target.value))} /></label>
+                <label><span>{observationModel.controlA.label} <strong>{controlA}{observationModel.controlA.unit ? ` ${observationModel.controlA.unit}` : ""}</strong></span><input type="range" min={observationModel.controlA.min} max={observationModel.controlA.max} step={observationModel.controlA.step} value={controlA} onChange={(event) => setControlA(Number(event.target.value))} /></label>
+                <label><span>{observationModel.controlB.label} <strong>{controlB}{observationModel.controlB.unit ? ` ${observationModel.controlB.unit}` : ""}</strong></span><input type="range" min={observationModel.controlB.min} max={observationModel.controlB.max} step={observationModel.controlB.step} value={controlB} onChange={(event) => setControlB(Number(event.target.value))} /></label>
               </div>
               <div className="data-readout">
                 {observationModel.readouts.map((readout) => <span key={readout.label}>{readout.label} <strong>{readout.value}</strong></span>)}
               </div>
+              {activeModule.id === "motion" && (
+                <div className="motion-trials" aria-label="Motion trial results">
+                  <div className="motion-trial-header"><span>Trial</span><span>Force</span><span>Mass</span><span>Acceleration</span><span>2 s distance</span></div>
+                  {motionTrials.length ? motionTrials.map((trial) => (
+                    <div className="motion-trial-row" key={trial.id}>
+                      <span>{trial.id}</span>
+                      <span>{trial.force} N</span>
+                      <span>{trial.mass} kg</span>
+                      <span>{trial.acceleration.toFixed(1)} m/s^2</span>
+                      <span>{trial.distance.toFixed(1)} m</span>
+                    </div>
+                  )) : <p className="muted">No motion trials yet.</p>}
+                </div>
+              )}
               <button className="primary-button" disabled={viewMode === "ar" && !cameraReady} onClick={async () => {
                 if (viewMode === "ar" && !cameraReady) return showToast("Start the camera before saving an AR trial.");
                 setTrialPulse((current) => current + 1);
+                if (activeModule.id === "motion") setMotionTrials((current) => [...current, getMotionTrial()]);
                 await addRecord("Observe", `Mode: ${viewMode}; ${observationModel.recordText}`);
                 markProgress("observation");
               }}>Run Trial</button>
