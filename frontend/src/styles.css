@@ -36,6 +36,22 @@ body.login-open {
   min-height: 100vh;
 }
 
+.app-crash-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.app-crash-screen .panel-card {
+  max-width: 420px;
+  display: grid;
+  gap: 10px;
+  text-align: center;
+  justify-items: center;
+}
+
 button,
 input,
 textarea {
