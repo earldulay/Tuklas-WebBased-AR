@@ -1,11 +1,16 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError, createSection, createSectionStudent, fetchClassProgress, fetchModules, fetchMyRecords, getSection, listSections, login as apiLogin, registerTeacher, resetStudentProgress, submitFeedback, syncRecords } from "./lib/api";
 import { clearSession, getStoredUser, setSession } from "./lib/auth";
 import { clearRecords, loadRecords, replaceRecords, saveRecord } from "./lib/storage";
 import { modules as fallbackModules } from "./data/modules";
 import type { ActivityRecord, AuthUser, ClassProgressRecord, Feedback, LearningModule, Role, Screen, Section, SectionSummary, Stage, ViewMode } from "./types/domain";
-import { ScienceScene } from "./components/ScienceScene";
 import { Activity, CircuitBoard, Download, Earth, Microscope, Printer, Thermometer, type LucideIcon } from "lucide-react";
+
+// three.js (pulled in by ScienceScene) is a heavy dependency that only the
+// Observe screen and its fallback 3D preview need - lazy-loading it keeps
+// three.js out of the initial bundle everyone downloads just to log in and
+// read Predict questions.
+const ScienceScene = lazy(() => import("./components/ScienceScene").then((module) => ({ default: module.ScienceScene })));
 
 // A module counts as "done" once all three of these stages have a
 // submitted record. Reflection is intentionally excluded - it's an
@@ -985,29 +990,31 @@ function App() {
                 <button className="text-button compact-button" onClick={() => setViewMode(viewMode === "ar" ? "fallback" : "ar")}>{viewMode === "ar" ? "Use 3D Model" : "Use Camera"}</button>
               </div>
               <div className={`ar-frame ${viewMode === "fallback" ? "fallback-mode" : ""}`}>
-                {viewMode === "ar" && (
-                  <ScienceScene
-                    moduleId={activeModule.id}
-                    controlA={controlA}
-                    controlB={controlB}
-                    acceleration={controlA / controlB}
-                    force={controlA}
-                    mass={controlB}
-                    viewMode="ar"
-                    onArReady={setCameraReady}
-                    onArStatus={setCameraStatus}
-                  />
-                )}
-                {viewMode === "fallback" && (
-                  <ActivityVisual
-                    moduleId={activeModule.id}
-                    controlA={controlA}
-                    controlB={controlB}
-                    trialPulse={trialPulse}
-                    onControlAChange={setControlA}
-                    onControlBChange={setControlB}
-                  />
-                )}
+                <Suspense fallback={null}>
+                  {viewMode === "ar" && (
+                    <ScienceScene
+                      moduleId={activeModule.id}
+                      controlA={controlA}
+                      controlB={controlB}
+                      acceleration={controlA / controlB}
+                      force={controlA}
+                      mass={controlB}
+                      viewMode="ar"
+                      onArReady={setCameraReady}
+                      onArStatus={setCameraStatus}
+                    />
+                  )}
+                  {viewMode === "fallback" && (
+                    <ActivityVisual
+                      moduleId={activeModule.id}
+                      controlA={controlA}
+                      controlB={controlB}
+                      trialPulse={trialPulse}
+                      onControlAChange={setControlA}
+                      onControlBChange={setControlB}
+                    />
+                  )}
+                </Suspense>
               </div>
               {viewMode === "ar" && (
                 <>
