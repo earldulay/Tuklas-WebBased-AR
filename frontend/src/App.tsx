@@ -32,7 +32,6 @@ function App() {
   const [offlineStatus, setOfflineStatus] = useState("Cache app shell, six modules, marker, and local records support.");
   const [deviceStatus, setDeviceStatus] = useState("Camera, WebGL, service worker, and storage readiness.");
   const [cameraStatus, setCameraStatus] = useState("Camera is off.");
-  const [updateStatus, setUpdateStatus] = useState("Last checked: Today");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
 
@@ -46,12 +45,12 @@ function App() {
 
   const nextTask =
     progressCount === 0
-      ? ["Predict: Identify the variables", "Set your prediction before observing the marker-based activity."]
+      ? ["Start with Predict", "Choose an answer and explain your reasoning before observing."]
       : progressCount === 1
-        ? ["Observe: Collect evidence", "Run the AR or 3D activity and record data."]
+        ? ["Continue to Observe", "Use the camera view or 3D model, then save trial evidence."]
         : progressCount === 2
-          ? ["Explain: Use evidence", "Connect observations to scientific ideas."]
-          : ["Result: Review work", "Read feedback and write a reflection."];
+          ? ["Finish with Explain", "Connect your data to the science concept."]
+          : ["Review Results", "Check your saved work and write a reflection."];
 
   useEffect(() => {
     loadRecords().then(setRecords);
@@ -229,27 +228,25 @@ function App() {
   }
 
   const titles: Record<Screen, [string, string]> = {
-    home: ["Home", "Tuklas AR Science Lab"],
-    modules: ["Modules", "Six Module Library"],
+    home: ["Workspace", "Tuklas AR Science Lab"],
+    modules: ["Lessons", "Grade 9 Science Modules"],
     detail: ["Predict", activeModule.title],
-    observe: [viewMode === "ar" ? "Marker AR" : "3D Fallback", activeModule.title],
+    observe: [viewMode === "ar" ? "Camera Observation" : "3D Observation", activeModule.title],
     explain: ["Explain", activeModule.title],
-    result: ["Result", "Activity Result"],
-    settings: ["Settings", "Offline Access"],
+    result: ["Results", "Activity Summary"],
+    settings: ["Setup", "Device and Saved Work"],
   };
 
   return (
     <div className={role ? `${role}-mode` : "login-open"}>
       {!role && (
         <section className="login-screen" aria-labelledby="loginTitle">
-          <div className="brand-bars" aria-hidden="true"><span /><span /><span /></div>
           <div className="login-card">
-            <div className="ar-badge" aria-hidden="true">AR</div>
             <p className="eyebrow">Marker-Based WebAR PWA</p>
             <h1 id="loginTitle">Tuklas AR Science Lab</h1>
-            <p>Offline-capable POE experiments for browser-based science activities.</p>
+            <p>Predict, observe, and explain Grade 9 science concepts using a phone camera, reusable marker, and offline-ready records.</p>
             <button className="primary-button" onClick={() => applyRole("student")}>Continue as Student</button>
-            <button className="secondary-button" onClick={() => applyRole("teacher")}>Teacher / Demo Mode</button>
+            <button className="secondary-button" onClick={() => applyRole("teacher")}>Open Teacher Review</button>
           </div>
         </section>
       )}
@@ -267,13 +264,12 @@ function App() {
         {screen === "home" && (
           <section className="screen active">
             <article className="hero-card">
-              <p className="eyebrow">Recommended Build</p>
-              <div className="module-summary">
-                <div className="module-icon">PWA</div>
+              <p className="eyebrow">Current Activity</p>
+              <div className="module-summary no-icon">
                 <div>
-                  <h2>React + TypeScript + Three.js + AR.js</h2>
-                  <p>Students use a browser, one reusable printed marker, and a 3D fallback when camera AR is weak.</p>
-                  <small>Offline-capable after initial download and setup.</small>
+                  <h2>{activeModule.title}</h2>
+                  <p>{activeModule.task}</p>
+                  <small>{activeModule.quarter} / {activeModule.time}</small>
                 </div>
               </div>
             </article>
@@ -281,7 +277,7 @@ function App() {
               <div>
                 <p className="eyebrow">Reusable Group Marker</p>
                 <h2>Print one marker per group</h2>
-                <p>Choose any module in the app, then keep this marker visible while observing the experiment.</p>
+                <p>Use this marker during camera observation so each group can anchor the activity in the same classroom setup.</p>
               </div>
               <a className="marker-preview" href="/assets/tuklas-marker.svg" target="_blank" rel="noreferrer" aria-label="Open printable Tuklas AR marker"><span>TUKLAS</span></a>
             </article>
@@ -294,7 +290,6 @@ function App() {
               <p>Completed: {progressCount} of {progressKeys.length} activity stages</p>
             </article>
             <button className="task-card" onClick={() => goTo(progressCount === 0 ? "detail" : progressCount === 1 ? "observe" : progressCount === 2 ? "explain" : "result")}>
-              <div className="task-icon">P</div>
               <div><strong>{nextTask[0]}</strong><span>{nextTask[1]}</span></div>
               <span aria-hidden="true">&gt;</span>
             </button>
@@ -310,8 +305,8 @@ function App() {
             <div className="module-list">
               {visibleModules.map((item) => (
                 <button className="module-card" key={item.id} onClick={() => { setActiveModule(item); goTo("detail"); }}>
-                  <span className="module-icon">{item.icon}</span>
                   <span><strong>{item.title}</strong><small>{item.subtitle}</small></span>
+                  <small>{item.quarter}</small>
                   <span aria-hidden="true">&gt;</span>
                 </button>
               ))}
@@ -322,8 +317,7 @@ function App() {
         {screen === "detail" && (
           <section className="screen active">
             <article className="panel-card">
-              <div className="module-summary">
-                <div className="module-icon">{activeModule.icon}</div>
+              <div className="module-summary no-icon">
                 <div><h2>{activeModule.title}</h2><p>{activeModule.quarter}</p><small>Estimated time: {activeModule.time}</small></div>
               </div>
             </article>
@@ -358,26 +352,26 @@ function App() {
           <section className="screen active">
             <article className="ar-panel">
               <div className="row-between">
-                <div><p className="eyebrow">{viewMode === "ar" ? "Marker AR Mode" : "Interactive 3D Mode"}</p><h2>{viewMode === "ar" ? "Point the camera at the group marker" : "Use when camera AR is unavailable"}</h2></div>
-                <button className="text-button compact-button" onClick={() => setViewMode(viewMode === "ar" ? "fallback" : "ar")}>{viewMode === "ar" ? "Use 3D" : "Use AR"}</button>
+                <div><p className="eyebrow">{viewMode === "ar" ? "Camera Mode" : "3D Model Mode"}</p><h2>{viewMode === "ar" ? "Start the camera and observe the trial" : "Use the model when camera access is unavailable"}</h2></div>
+                <button className="text-button compact-button" onClick={() => setViewMode(viewMode === "ar" ? "fallback" : "ar")}>{viewMode === "ar" ? "Use 3D Model" : "Use Camera"}</button>
               </div>
               <div className={`ar-frame ${viewMode === "fallback" ? "fallback-mode" : ""}`}>
                 {viewMode === "ar" && <video ref={videoRef} className="camera-video" muted playsInline autoPlay />}
-                <div className="camera-layer" aria-hidden="true" />
-                <div className="marker-target"><span>TUKLAS</span></div>
-                <div className="corner tl" /><div className="corner tr" /><div className="corner bl" /><div className="corner br" />
                 <ScienceScene acceleration={acceleration} force={force} mass={mass} viewMode={viewMode} />
                 <div className="track" />
                 <div className="cart" style={{ transform: `translateX(${cartDistance}px)` }}><span>{mass} kg</span></div>
                 <div className="force-arrow" style={{ transform: `scaleX(${Math.max(0.2, force / 3)})` }} />
                 <div className="hand" aria-hidden="true" />
               </div>
-              <p className="camera-status">{cameraStatus}</p>
-              <div className="tool-grid">
-                {viewMode === "ar" && <button onClick={startCamera}>Start Camera</button>}
-                {viewMode === "ar" && <button onClick={stopCamera}>Stop Camera</button>}
-                {["Labels", "Graph", "Data"].map((label) => <button key={label} onClick={() => showToast(`${label} view selected.`)}>{label}</button>)}
-              </div>
+              {viewMode === "ar" && (
+                <>
+                  <p className="camera-status">{cameraStatus}</p>
+                  <div className="tool-grid">
+                    <button onClick={startCamera}>Start Camera</button>
+                    <button onClick={stopCamera}>Stop Camera</button>
+                  </div>
+                </>
+              )}
             </article>
             <article className="panel-card">
               <p className="eyebrow">Observation Prompt</p>
@@ -438,10 +432,9 @@ function App() {
 
         {screen === "settings" && (
           <section className="screen active">
-            <button className="settings-row" onClick={prepareOffline}><span className="settings-icon">DL</span><span><strong>Prepare for Offline Use</strong><small>{offlineStatus}</small></span><span aria-hidden="true">&gt;</span></button>
-            <button className="settings-row" onClick={handleSync}><span className="settings-icon">SY</span><span><strong>Sync Saved Work</strong><small>{records.filter((record) => !record.syncedAt).length} records waiting for PostgreSQL sync.</small></span><span aria-hidden="true">&gt;</span></button>
-            <button className="settings-row" onClick={() => setUpdateStatus("Last checked: just now")}><span className="settings-icon">UP</span><span><strong>Content Updates</strong><small>{updateStatus}</small></span><span aria-hidden="true">&gt;</span></button>
-            <button className="settings-row" onClick={checkDevice}><span className="settings-icon">OK</span><span><strong>Device Check</strong><small>{deviceStatus}</small></span><span aria-hidden="true">&gt;</span></button>
+            <button className="settings-row" onClick={prepareOffline}><span><strong>Prepare for Offline Use</strong><small>{offlineStatus}</small></span><span aria-hidden="true">&gt;</span></button>
+            <button className="settings-row" onClick={handleSync}><span><strong>Sync Saved Work</strong><small>{records.filter((record) => !record.syncedAt).length} records waiting for teacher review.</small></span><span aria-hidden="true">&gt;</span></button>
+            <button className="settings-row" onClick={checkDevice}><span><strong>Device Check</strong><small>{deviceStatus}</small></span><span aria-hidden="true">&gt;</span></button>
             <article className="panel-card offline-checklist"><p className="eyebrow">Offline Setup</p><ol><li>Open this HTTPS app while connected.</li><li>Tap Prepare for Offline Use.</li><li>Add the app to the home screen.</li><li>Reopen in airplane mode and run one trial.</li></ol></article>
             <article className="panel-card teacher-tools">
               <div className="row-between"><h2>Saved Work</h2><button className="text-button compact-button" onClick={async () => { await clearRecords(); setRecords([]); showToast("Saved progress cleared."); }}>Clear</button></div>
@@ -465,7 +458,7 @@ function App() {
       <nav className="bottom-nav" aria-label="Primary navigation">
         {(["home", "modules", "settings"] as Screen[]).map((item) => (
           <button key={item} className={screen === item || (screen === "detail" && item === "modules") ? "active" : ""} onClick={() => goTo(item)}>
-            <span>{item[0].toUpperCase()}</span>{item[0].toUpperCase() + item.slice(1)}
+            {item === "modules" ? "Lessons" : item[0].toUpperCase() + item.slice(1)}
           </button>
         ))}
       </nav>
