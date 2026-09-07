@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  student
+  teacher
+}
+
+enum ViewMode {
+  ar
+  fallback
+}
+
+enum ActivityStage {
+  Predict
+  Observe
+  Explain
+  Reflection
+}
+
+model Module {
+  id        String   @id
+  icon      String
+  title     String
+  subtitle  String
+  quarter   String
+  time      String
+  task      String
+  prediction String
+  choices   String[]
+  observe   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  submissions ActivityRecord[]
+}
+
+model ActivityRecord {
+  id        String        @id
+  role      Role
+  moduleId  String
+  module    Module        @relation(fields: [moduleId], references: [id])
+  mode      ViewMode
+  stage     ActivityStage
+  text      String
+  createdAt DateTime
+  syncedAt  DateTime      @default(now())
+
+  @@index([moduleId])
+  @@index([role])
+  @@index([createdAt])
+}

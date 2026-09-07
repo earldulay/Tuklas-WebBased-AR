@@ -10,6 +10,7 @@
   --surface: #f5f8fd;
   --panel: #ffffff;
   --shadow: 0 12px 28px rgba(15, 76, 154, 0.12);
+  --camera: #27344d;
 }
 
 * {
@@ -29,6 +30,10 @@ body {
 
 body.login-open {
   overflow: hidden;
+}
+
+#root {
+  min-height: 100vh;
 }
 
 button,
@@ -86,9 +91,9 @@ small {
   align-items: center;
   padding: calc(28px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom));
   background:
-    linear-gradient(150deg, rgba(7, 52, 111, 0.95), rgba(15, 76, 154, 0.86)),
-    url("https://images.unsplash.com/photo-1581090464777-f3220bbe1b8b?auto=format&fit=crop&w=1400&q=80")
-      center / cover;
+    radial-gradient(circle at 28% 18%, rgba(247, 198, 0, 0.55) 0 9%, transparent 10%),
+    linear-gradient(135deg, rgba(7, 52, 111, 0.96), rgba(15, 76, 154, 0.9)),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.08) 0 2px, transparent 2px 30px);
 }
 
 .login-screen.hidden {
@@ -172,6 +177,13 @@ small {
   border: 1px solid var(--blue);
   color: var(--blue);
   background: #fff;
+}
+
+.compact-button {
+  width: auto;
+  min-height: 36px;
+  padding: 0 12px;
+  white-space: nowrap;
 }
 
 .login-card .primary-button,
@@ -278,6 +290,39 @@ small {
   color: var(--blue);
   font-weight: 900;
   background: #f8fbff;
+}
+
+.module-icon {
+  font-size: 0.8rem;
+}
+
+.marker-panel {
+  display: grid;
+  grid-template-columns: 1fr 112px;
+  gap: 14px;
+  align-items: center;
+}
+
+.marker-preview {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border: 14px solid #111;
+  color: #111;
+  text-decoration: none;
+  background:
+    linear-gradient(90deg, #111 0 18%, transparent 18% 82%, #111 82%),
+    linear-gradient(#111 0 18%, transparent 18% 82%, #111 82%),
+    #fff;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.marker-preview span,
+.marker-target span {
+  padding: 4px 6px;
+  border: 2px solid currentColor;
+  background: #fff;
 }
 
 .row-between {
@@ -420,10 +465,49 @@ input[type="range"] {
   border: 2px solid var(--line);
   border-radius: 8px;
   background:
+    linear-gradient(transparent 31px, rgba(255, 255, 255, 0.13) 32px),
+    linear-gradient(90deg, transparent 31px, rgba(255, 255, 255, 0.13) 32px),
+    var(--camera);
+  background-size: 32px 32px;
+}
+
+.camera-layer {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(160deg, rgba(13, 168, 137, 0.32), transparent 44%),
+    linear-gradient(20deg, rgba(247, 198, 0, 0.22), transparent 38%);
+}
+
+.marker-target {
+  position: absolute;
+  right: 30px;
+  bottom: 24px;
+  display: grid;
+  place-items: center;
+  width: 112px;
+  aspect-ratio: 1;
+  border: 12px solid #111;
+  color: #111;
+  background:
+    linear-gradient(90deg, #111 0 18%, transparent 18% 82%, #111 82%),
+    linear-gradient(#111 0 18%, transparent 18% 82%, #111 82%),
+    #fff;
+  transform: perspective(420px) rotateX(58deg) rotateZ(-7deg);
+  transform-origin: center bottom;
+}
+
+.ar-frame.fallback-mode {
+  background:
     linear-gradient(transparent 31px, rgba(15, 76, 154, 0.08) 32px),
     linear-gradient(90deg, transparent 31px, rgba(15, 76, 154, 0.08) 32px),
     #f8fbff;
-  background-size: 32px 32px;
+}
+
+.ar-frame.fallback-mode .camera-layer,
+.ar-frame.fallback-mode .marker-target,
+.ar-frame.fallback-mode .corner {
+  display: none;
 }
 
 .corner {
@@ -466,9 +550,23 @@ input[type="range"] {
   right: 28px;
   bottom: 82px;
   left: 28px;
+  z-index: 2;
   height: 10px;
   border-radius: 999px;
   background: #7c8ba3;
+}
+
+.three-scene {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.three-scene canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .cart {
@@ -484,6 +582,7 @@ input[type="range"] {
   color: #fff;
   font-weight: 900;
   background: var(--red);
+  z-index: 3;
   transition: transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -511,6 +610,7 @@ input[type="range"] {
   position: absolute;
   left: 144px;
   bottom: 124px;
+  z-index: 3;
   width: 82px;
   height: 6px;
   border-radius: 999px;
@@ -532,12 +632,22 @@ input[type="range"] {
   position: absolute;
   right: 44px;
   bottom: 106px;
+  z-index: 3;
   width: 70px;
   height: 26px;
   border: 3px solid #2a3447;
   border-radius: 999px 999px 8px 8px;
   transform: rotate(-18deg);
   background: #fff;
+}
+
+.offline-checklist ol {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.offline-checklist li + li {
+  margin-top: 6px;
 }
 
 .tool-grid,
@@ -736,6 +846,14 @@ input[type="range"] {
 @media (max-width: 390px) {
   .app-header {
     grid-template-columns: 34px 1fr auto;
+  }
+
+  .marker-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .marker-preview {
+    width: 112px;
   }
 
   .status-button {

@@ -1,0 +1,10 @@
+{
+  "name": "Tuklas AR Science Lab",
+  "short_name": "Tuklas Lab",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f8fd",
+  "theme_color": "#0f4c9a",
+  "description": "Offline-capable marker-based WebAR app for Predict-Observe-Explain science activities.",
+  "icons": []
+}

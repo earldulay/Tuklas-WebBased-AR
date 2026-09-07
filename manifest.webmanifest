@@ -1,9 +1,0 @@
-{
-  "name": "Tuklas AR Science Lab",
-  "short_name": "Tuklas Lab",
-  "start_url": "./index.html",
-  "display": "standalone",
-  "background_color": "#f6f8f3",
-  "theme_color": "#0f4c9a",
-  "description": "Offline-capable web draft for AR-assisted Predict-Observe-Explain science activities."
-}
