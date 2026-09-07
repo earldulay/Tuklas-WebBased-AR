@@ -330,7 +330,7 @@ export function ScienceScene({ moduleId, controlA, controlB, acceleration, force
       cancelAnimationFrame(animationId);
       window.removeEventListener("resize", resize);
       arSource?.dispose?.();
-      arSource?.domElement.remove();
+      arSource?.domElement?.remove();
       renderer.dispose();
       renderer.domElement.remove();
     };
