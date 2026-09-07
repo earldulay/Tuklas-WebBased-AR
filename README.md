@@ -101,6 +101,29 @@ Student work is saved locally first. When the device is online, the Settings scr
 
 Describe the app as offline-capable after initial download and setup. Browser storage may still be cleared or evicted by the device.
 
+## Deployment
+
+Frontend: **Vercel**. Backend: **Vercel** (separate project, serverless functions). Database: **Neon** (Postgres).
+
+1. Create a Neon project and copy its pooled (`DATABASE_URL`) and direct (`DIRECT_URL`) connection strings — `schema.prisma` uses both: `url` (pooled, runtime queries) and `directUrl` (unpooled, required for migrations since pgbouncer connections can't run Prisma's schema diffing).
+2. Locally, set both in `backend/.env` and run:
+
+   ```bash
+   npm run db:migrate --workspace backend -- --name init
+   ```
+
+   This creates `backend/prisma/migrations/` and applies the schema to Neon. Commit the generated migration files — production only ever *applies* migrations (`prisma migrate deploy`), it never generates them.
+3. On Vercel, create a **second** project from this repo (separate from the frontend one) with **Root Directory set to `backend`**. It picks up [backend/vercel.json](backend/vercel.json) (rewrites every path to the [backend/api/index.ts](backend/api/index.ts) serverless entry, which wraps the same Express `app` used locally) and [backend/package.json](backend/package.json)'s `vercel-build` script (`prisma generate && prisma migrate deploy`). Set project env vars:
+   - `DATABASE_URL` and `DIRECT_URL` — the Neon connection strings.
+   - `CLIENT_ORIGIN` — comma-separated list of allowed origins, e.g. `https://your-app.vercel.app,https://your-app-git-preview.vercel.app` (see note below — no wildcard matching).
+4. On the frontend Vercel project, set `VITE_API_URL` to `https://<your-backend-project>.vercel.app/api`.
+5. After the first deploy, seed the module library once: `POST https://<your-backend-project>.vercel.app/api/modules/seed`.
+
+Notes:
+- `schema.prisma`'s `generator client` sets `binaryTargets = ["native", "rhel-openssl-3.0.x"]` so the Prisma query engine works both on your local machine and on Vercel's Linux runtime.
+- The backend's CORS check does exact string matches against `CLIENT_ORIGIN`, not glob/wildcard matching — list Vercel preview URLs explicitly if you need them, or extend `app.ts`'s origin check if preview URLs are unpredictable.
+- `backend/src/server.ts` (the local `npm run dev` entry with `app.listen`) is unused in the Vercel deployment — Vercel calls the exported Express `app` from `backend/api/index.ts` directly per-request.
+
 ## Recommended Testing
 
 ```bash
