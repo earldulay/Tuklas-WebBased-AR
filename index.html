@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f4c9a" />
+    <title>Tuklas AR Science Lab</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="login-open">
+    <section class="login-screen" id="loginScreen" aria-labelledby="loginTitle">
+      <div class="brand-bars" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+      <div class="login-card">
+        <div class="ar-badge" aria-hidden="true">AR</div>
+        <p class="eyebrow">AR Science Laboratory Simulator</p>
+        <h1 id="loginTitle">Explore. Predict. Observe. Explain.</h1>
+        <p>Choose how you want to open the offline-capable Grade 9 science lab.</p>
+        <button class="primary-button" data-role="student">Continue as Student</button>
+        <button class="secondary-button" data-role="teacher">Teacher / Demo Mode</button>
+      </div>
+    </section>
+
+    <header class="app-header">
+      <button class="back-button" id="backButton" aria-label="Go back">‹</button>
+      <div>
+        <p class="eyebrow" id="screenKicker">Home</p>
+        <h1 id="screenTitle">Tuklas AR Science Lab</h1>
+      </div>
+      <button class="status-button" id="connectionStatus">Online</button>
+    </header>
+
+    <main class="screen-stack">
+      <section class="screen active" id="homeScreen" data-screen="home">
+        <article class="hero-card">
+          <p class="eyebrow">Current Learning Module</p>
+          <div class="module-summary">
+            <div class="module-icon">F</div>
+            <div>
+              <h2 id="homeModuleTitle">Forces and Motion</h2>
+              <p id="homeModuleDesc">Investigate motion using simple machines.</p>
+              <small id="homeModuleTime">Estimated time: 15-20 min</small>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel-card">
+          <div class="row-between">
+            <h2>Progress Summary</h2>
+            <strong id="progressPercent">0% Complete</strong>
+          </div>
+          <div class="progress-track"><span id="progressBar"></span></div>
+          <p id="progressText">Complete Predict, Observe, Explain, and Result.</p>
+        </article>
+
+        <button class="task-card" id="continueTask">
+          <div class="task-icon">P</div>
+          <div>
+            <strong id="currentTaskTitle">Predict: Identify the variables</strong>
+            <span id="currentTaskDesc">Set your prediction before observing the AR simulation.</span>
+          </div>
+          <span aria-hidden="true">›</span>
+        </button>
+      </section>
+
+      <section class="screen" id="modulesScreen" data-screen="modules">
+        <label class="search-box">
+          <span>Search modules</span>
+          <input id="moduleSearch" type="search" placeholder="Search modules..." />
+        </label>
+        <div class="module-list" id="moduleList"></div>
+      </section>
+
+      <section class="screen" id="detailScreen" data-screen="detail">
+        <article class="panel-card">
+          <div class="module-summary">
+            <div class="module-icon" id="detailIcon">F</div>
+            <div>
+              <h2 id="detailTitle">Forces and Motion</h2>
+              <p id="detailQuarter">Module 1</p>
+              <small id="detailTime">Estimated time: 15-20 min</small>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel-card">
+          <p class="eyebrow">Learning Task</p>
+          <p id="learningTask">Predict how changing force affects motion.</p>
+        </article>
+
+        <article class="panel-card">
+          <p class="eyebrow">POE Steps</p>
+          <div class="poe-steps" id="poeSteps"></div>
+        </article>
+
+        <article class="panel-card">
+          <p class="eyebrow">Prediction Question</p>
+          <h2 id="predictionQuestion">If the force pushing the cart is increased, what will happen to its speed?</h2>
+          <div class="choice-list" id="predictionChoices"></div>
+          <textarea id="predictionNote" rows="4" placeholder="Why do you think so?"></textarea>
+          <button class="primary-button" id="savePrediction">Next</button>
+        </article>
+      </section>
+
+      <section class="screen" id="observeScreen" data-screen="observe">
+        <article class="ar-panel">
+          <div class="ar-frame">
+            <div class="corner tl"></div>
+            <div class="corner tr"></div>
+            <div class="corner bl"></div>
+            <div class="corner br"></div>
+            <div class="track"></div>
+            <div class="cart" id="cart"><span id="massLabel">1 kg</span></div>
+            <div class="force-arrow" id="forceArrow"></div>
+            <div class="hand" aria-hidden="true"></div>
+          </div>
+          <div class="tool-grid">
+            <button data-tool="labels">Labels</button>
+            <button data-tool="graph">Graph</button>
+            <button data-tool="data">Data</button>
+          </div>
+        </article>
+
+        <article class="panel-card">
+          <p class="eyebrow">Observation Prompt</p>
+          <p id="observationPrompt">Observe the motion of the cart. What do you notice as the force changes?</p>
+          <div class="control-grid">
+            <label>
+              Force
+              <input id="forceInput" type="range" min="0" max="6" step="1" value="2" />
+            </label>
+            <label>
+              Mass
+              <input id="massInput" type="range" min="1" max="4" step="1" value="1" />
+            </label>
+          </div>
+          <div class="data-readout">
+            <span>Force <strong id="forceReadout">2 N</strong></span>
+            <span>Acceleration <strong id="accelReadout">2.0 m/s2</strong></span>
+          </div>
+          <button class="primary-button" id="runTrial">Run AR Trial</button>
+          <button class="secondary-button" id="continueExplain">Continue</button>
+        </article>
+      </section>
+
+      <section class="screen" id="explainScreen" data-screen="explain">
+        <article class="panel-card">
+          <p>Use your observations to explain the results.</p>
+          <label class="field-label">
+            My prediction
+            <textarea id="predictionReview" rows="4"></textarea>
+          </label>
+          <label class="field-label">
+            Evidence from observation
+            <textarea id="evidenceInput" rows="5" placeholder="What did you observe? Include data or patterns."></textarea>
+          </label>
+          <label class="field-label">
+            Scientific explanation
+            <textarea id="explanationInput" rows="5" placeholder="Explain why this happened using scientific ideas."></textarea>
+          </label>
+          <button class="primary-button" id="submitExplanation">Submit</button>
+        </article>
+      </section>
+
+      <section class="screen" id="resultScreen" data-screen="result">
+        <article class="result-card">
+          <div class="score-ring"><strong id="scoreText">85%</strong><span>Complete</span></div>
+          <h2>Great work!</h2>
+          <p>Prediction, Observation, and Explanation completed.</p>
+        </article>
+        <article class="panel-card">
+          <p class="eyebrow">Teacher Review</p>
+          <p id="teacherFeedback">Good use of evidence in your observations. Try to explain the relationship between force and acceleration more clearly.</p>
+        </article>
+        <article class="panel-card">
+          <p class="eyebrow">Reflection Prompt</p>
+          <p>What did you learn from this activity? How can this be applied in real life?</p>
+          <textarea id="reflectionInput" rows="4" placeholder="Write your reflection..."></textarea>
+          <button class="secondary-button" id="saveReflection">Save Reflection</button>
+        </article>
+      </section>
+
+      <section class="screen" id="settingsScreen" data-screen="settings">
+        <button class="settings-row" id="prepareOffline">
+          <span class="settings-icon">↓</span>
+          <span><strong>Offline Assets</strong><small id="offlineStatus">Download modules and AR assets for offline use.</small></span>
+          <span aria-hidden="true">›</span>
+        </button>
+        <button class="settings-row" id="showSaved">
+          <span class="settings-icon">□</span>
+          <span><strong>Saved Progress</strong><small id="savedCount">0 activities saved</small></span>
+          <span aria-hidden="true">›</span>
+        </button>
+        <button class="settings-row" id="checkUpdates">
+          <span class="settings-icon">↻</span>
+          <span><strong>Content Updates</strong><small id="updateStatus">Last checked: Today</small></span>
+          <span aria-hidden="true">›</span>
+        </button>
+        <button class="settings-row" id="deviceCheck">
+          <span class="settings-icon">▯</span>
+          <span><strong>Device Check</strong><small id="deviceStatus">Camera and storage readiness.</small></span>
+          <span aria-hidden="true">›</span>
+        </button>
+        <article class="panel-card teacher-tools" id="savedPanel">
+          <div class="row-between">
+            <h2>Saved Work</h2>
+            <button class="text-button" id="clearRecords">Clear</button>
+          </div>
+          <div id="recordsList" class="records-list"></div>
+          <button class="secondary-button" id="exportWork">Export JSON</button>
+        </article>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Primary navigation">
+      <button class="active" data-nav="home"><span>⌂</span>Home</button>
+      <button data-nav="modules"><span>▰</span>Modules</button>
+      <button data-nav="settings"><span>⚙</span>Settings</button>
+    </nav>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
