@@ -143,6 +143,9 @@ function App() {
   const overallCompleted = moduleProgress.reduce((total, item) => total + item.completed, 0);
   const overallTotal = modules.length * REQUIRED_STAGES.length;
   const overallPercent = overallTotal ? Math.round((overallCompleted / overallTotal) * 100) : 0;
+  const completedModules = moduleProgress.filter((item) => item.completed === REQUIRED_STAGES.length);
+  const startedModules = moduleProgress.filter((item) => item.completed > 0 && item.completed < REQUIRED_STAGES.length);
+  const notStartedModules = moduleProgress.filter((item) => item.completed === 0);
   const observationModel = getObservationModel(activeModule.id, controlA, controlB, lab);
   const classSummary = useMemo(() => {
     return students.map((student) => {
@@ -642,6 +645,24 @@ function App() {
     );
   }
 
+  const progressSection = (heading: string, items: typeof moduleProgress, empty: string) => (
+    <section className="progress-category" aria-labelledby={`progress-${heading.toLowerCase().replace(/\s+/g, "-")}`}>
+      <div className="row-between progress-category-heading"><h3 id={`progress-${heading.toLowerCase().replace(/\s+/g, "-")}`}>{heading}</h3><span>{items.length}</span></div>
+      {items.length ? <div className="module-progress-list">
+        {items.map(({ module, completed, percent: modulePercent, stages, grade }) => (
+          <button type="button" className="module-progress-row" key={module.id} onClick={() => openModuleProgress(module, stages)}>
+            <ModuleIcon moduleId={module.id} />
+            <div>
+              <div className="row-between"><strong>{module.quarter}: {module.title}</strong><span>{modulePercent}%</span></div>
+              <div className="progress-track"><span style={{ width: `${modulePercent}%` }} /></div>
+              <div className="row-between"><small>{completed} of {REQUIRED_STAGES.length} stages</small>{grade && <small className="graded-badge">Graded{grade.score != null ? ` · ${grade.score}/100` : ""}</small>}</div>
+            </div>
+          </button>
+        ))}
+      </div> : <p className="muted progress-empty">{empty}</p>}
+    </section>
+  );
+
   return (
     <div className={`${role}-mode`}>
       <header className="app-header">
@@ -696,7 +717,13 @@ function App() {
                 </div>
                 <div className="progress-track overall-track"><span style={{ width: `${overallPercent}%` }} /></div>
                 <p>{overallCompleted} of {overallTotal} activity stages completed</p>
-                <div className="module-progress-list">
+                <div className="progress-categories">
+                  {progressSection("Completed", completedModules, "No experiments completed yet.")}
+                  {progressSection("Started", startedModules, "No experiments started yet.")}
+                  {progressSection("Not Started", notStartedModules, "All experiments have been started.")}
+                </div>
+                {/* old progress list removed */}
+                {false && <div>
                   {moduleProgress.map(({ module, completed, percent: modulePercent, stages, grade }) => (
                     <button type="button" className="module-progress-row" key={module.id} onClick={() => openModuleProgress(module, stages)}>
                       <ModuleIcon moduleId={module.id} />
@@ -710,7 +737,7 @@ function App() {
                       </div>
                     </button>
                   ))}
-                </div>
+                </div>}
               </article>
             )}
             <article className="panel-card marker-access">

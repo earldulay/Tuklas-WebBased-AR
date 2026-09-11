@@ -705,6 +705,12 @@ input[type="range"] {
 .base-choice small { flex-basis: 100%; }
 .earth-workbench li { margin-bottom: 8px; }
 .data-readout strong { overflow-wrap: anywhere; }
+.progress-categories { display: grid; gap: 18px; margin-top: 18px; }
+.progress-category { display: grid; gap: 8px; }
+.progress-category-heading { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.progress-category-heading h3 { margin: 0; font-size: 0.9rem; }
+.progress-category-heading span { display: grid; place-items: center; min-width: 26px; height: 26px; border-radius: 50%; color: var(--blue); background: #eaf2ff; font-weight: 800; }
+.progress-empty { margin: 0; padding: 8px 0; }
 .screen, .screen > *, .ar-panel, .panel-card, .motion-trials { min-width: 0; }
 .ar-panel .row-between { flex-wrap: wrap; }
 .ar-panel .row-between > div { flex: 1 1 180px; min-width: 0; }
