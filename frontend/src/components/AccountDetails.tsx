@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronRight, UserRound, X } from "lucide-react";
-import { fetchMyAccount } from "../lib/api";
+import { ApiError, fetchMyAccount } from "../lib/api";
 import { cacheAccount, getToken } from "../lib/auth";
 import type { AuthUser } from "../types/domain";
 
@@ -9,21 +9,40 @@ export function AccountDetails({ user }: { user: AuthUser }) {
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [account, setAccount] = useState(user);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => { setAccount(user); }, [user]);
 
   useEffect(() => {
     if (user.role !== "student") return;
     let cancelled = false;
     const token = getToken();
     const refresh = async () => {
-      if (!navigator.onLine || !token) return;
+      if (cancelled) return;
+      setError("");
+      if (!token) {
+        setError("Sign in again to load your account details.");
+        return;
+      }
       setLoading(true);
       try {
         const result = await fetchMyAccount();
-        if (cancelled || getToken() !== token || result.user?.id !== user.id) return;
+        if (cancelled || getToken() !== token) return;
+        if (result.user?.id !== user.id || result.user.teacherName === undefined || result.user.sectionName === undefined) {
+          throw new Error("Incomplete account response");
+        }
         setAccount(result.user);
         cacheAccount(token, result.user);
-      } catch {
-        // Keep the last known enrollment available when offline.
+      } catch (cause) {
+        if (cancelled || getToken() !== token) return;
+        // Keep cached enrollment, but distinguish a server failure from being offline.
+        setError(cause instanceof ApiError
+          ? (cause.status === 404
+            ? "Account details are unavailable from the server. Please try again later."
+            : "The server could not load your account details. Please try again.")
+          : !navigator.onLine
+            ? "You're offline. Reconnect to refresh your account details."
+            : "Unable to load your account details. Please try again.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -34,7 +53,7 @@ export function AccountDetails({ user }: { user: AuthUser }) {
   }, [user.id, user.role, refreshVersion]);
 
   const enrollmentLabel = (value: string | null | undefined) => value === undefined
-    ? (loading ? "Loading…" : "Connect to the internet to load this detail.")
+    ? (loading ? "Loading…" : "Not available")
     : value || "Not assigned";
   const role = user.role === "teacher" ? "Teacher" : "Student";
   const createdAt = new Date(user.createdAt);
@@ -79,6 +98,12 @@ export function AccountDetails({ user }: { user: AuthUser }) {
           </>}
           <div><dt>Account created</dt><dd>{joined}</dd></div>
         </dl>
+        {user.role === "student" && error && <div role="status">
+          <p>{error}</p>
+          <button type="button" disabled={loading} onClick={() => setRefreshVersion(current => current + 1)}>
+            {loading ? "Loading…" : "Try again"}
+          </button>
+        </div>}
       </dialog>
     </>
   );
