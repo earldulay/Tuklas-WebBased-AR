@@ -50,6 +50,10 @@ export function fetchMyRecords() {
   return request<{ records: ActivityRecord[]; feedback: Feedback[] }>("/sync/mine");
 }
 
+export function fetchMyAccount() {
+  return request<{ user: AuthUser }>("/auth/me");
+}
+
 export function login(username: string, password: string) {
   return request<{ token: string; user: AuthUser }>("/auth/login", {
     method: "POST",

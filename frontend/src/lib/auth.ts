@@ -37,6 +37,11 @@ export function setSession(token: string, user: AuthUser) {
   window.dispatchEvent(new Event(SESSION_EVENT));
 }
 
+export function cacheAccount(token: string, user: AuthUser) {
+  if (getToken() !== token || getStoredUser()?.id !== user.id) return;
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
 export function clearSession(expired = false) {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);

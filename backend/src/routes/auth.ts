@@ -16,7 +16,16 @@ function requireDatabase(response: import("express").Response) {
   return true;
 }
 
-function toPublicUser(user: { id: string; username: string; role: string; name: string; sectionId: string | null; createdAt: Date }) {
+const accountRelations = {
+  enrolledSection: { select: { name: true, teacher: { select: { name: true } } } },
+  createdBy: { select: { name: true } },
+} satisfies Prisma.UserInclude;
+
+function toPublicUser(user: {
+  id: string; username: string; role: string; name: string; sectionId: string | null; createdAt: Date;
+  enrolledSection?: { name: string; teacher: { name: string } } | null;
+  createdBy?: { name: string } | null;
+}) {
   return {
     id: user.id,
     username: user.username,
@@ -24,6 +33,10 @@ function toPublicUser(user: { id: string; username: string; role: string; name: 
     name: user.name,
     sectionId: user.sectionId,
     createdAt: user.createdAt,
+    ...(user.role === "student" && "enrolledSection" in user ? {
+      sectionName: user.enrolledSection?.name ?? null,
+      teacherName: user.enrolledSection?.teacher.name ?? user.createdBy?.name ?? null,
+    } : {}),
   };
 }
 
@@ -70,7 +83,7 @@ authRouter.post("/login", async (request, response, next) => {
 
   try {
     const payload = loginSchema.parse(request.body);
-    const user = await prisma.user.findUnique({ where: { username: payload.username } });
+    const user = await prisma.user.findUnique({ where: { username: payload.username }, include: accountRelations });
 
     if (!user || !(await verifyPassword(payload.password, user.passwordHash))) {
       response.status(401).json({ error: "Invalid username or password." });
@@ -88,7 +101,7 @@ authRouter.get("/me", requireAuth, async (request, response, next) => {
   if (!requireDatabase(response)) return;
 
   try {
-    const user = await prisma.user.findUnique({ where: { id: request.user!.sub } });
+    const user = await prisma.user.findUnique({ where: { id: request.user!.sub }, include: accountRelations });
     if (!user) {
       response.status(404).json({ error: "Account no longer exists." });
       return;

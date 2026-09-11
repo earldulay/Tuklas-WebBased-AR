@@ -45,6 +45,8 @@ export interface AuthUser {
   role: Role;
   name: string;
   sectionId: string | null;
+  sectionName?: string | null;
+  teacherName?: string | null;
   createdAt: string;
 }
 
