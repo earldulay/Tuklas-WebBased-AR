@@ -86,8 +86,8 @@ Open `http://localhost:5173`.
 ## Current Features
 
 - Student and teacher/demo entry modes
-- Five-experiment POE activity library
-- Marker-based AR mode foundation with AR.js dependency loaded for the observation view
+- Twelve-experiment POE activity library
+- Marker-based AR observation with local AR.js tracking and calibration files
 - Three.js-powered interactive 3D fallback scene
 - Local saved activity records through IndexedDB
 - Offline preparation through a service worker
@@ -100,6 +100,10 @@ Open `http://localhost:5173`.
 Student work is saved locally first. When the device is online, the Settings screen can sync unsynced IndexedDB records to the Express API, which persists them in PostgreSQL.
 
 Describe the app as offline-capable after initial download and setup. Browser storage may still be cleared or evicted by the device.
+
+The production build precaches the app, all twelve experiments, the lazy-loaded Three.js and AR.js code, and the marker/calibration files. Settings reports readiness only after the service worker confirms these files are cached. Offline preparation is unavailable on the Vite development server; use a production build over HTTPS or localhost.
+
+Sign in while online before going offline. An existing session can open lessons, run 3D/AR trials, save POE work locally, and export JSON without a connection. Login, account/class management, server progress/feedback, and uploading saved work require connectivity. Offline AR still requires camera permission and a device/browser that supports WebGL and camera access.
 
 ## Deployment
 
@@ -130,5 +134,14 @@ Notes:
 npm run typecheck
 npm run build
 ```
+
+With a dedicated Chrome test profile running on remote debugging port 9222, run the offline browser regression in PowerShell:
+
+```powershell
+$env:TEST_OFFLINE = '1'
+npm run test:browser
+```
+
+This serves `frontend/dist` on loopback port 5186, prepares a fresh offline cache before any lesson is opened, stops that server, disables the HTTP cache, and reloads the app. It exercises all twelve 3D scenes and real AR.js detection using a synthetic camera stream, marker loss/reacquisition, local POE persistence, JSON export, queued uploads to a mock API, and failed preparation when a required file is missing. The test simulates browser online/offline status; the app server remains stopped throughout the offline checks. Screenshots are saved in `.browser-check/screens`. Physical camera behavior, Android/iOS home-screen installs, and real backend sync still need device/integration testing.
 
 Before expanding all modules, test the Newton's-law activity on the weakest available Android phone and one iPhone Safari/home-screen install.

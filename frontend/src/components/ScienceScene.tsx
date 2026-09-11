@@ -71,6 +71,7 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
     let animationId = 0;
     let arSource: ArToolkitSource | null = null;
     let arContext: ArToolkitContext | null = null;
+    let markerSetup: Promise<void> | null = null;
     let cancelled = false;
     let markerVisible = false;
     let hasStablePose = false;
@@ -155,7 +156,7 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
             displayHeight: mount.clientHeight,
           });
 
-          const context = new THREEx.ArToolkitContext({
+          const context: ArToolkitContext = new THREEx.ArToolkitContext({
             cameraParametersUrl,
             detectionMode: "mono",
             patternRatio: 0.5,
@@ -178,17 +179,36 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
               });
               context.init(() => {
                 if (cancelled) { context.dispose?.(); return; }
-          new THREEx.ArMarkerControls(context, trackedRoot, {
-            type: "pattern",
-            patternUrl: tuklasMarkerUrl,
-            changeMatrixMode: "modelViewMatrix",
-            minConfidence: 0.7,
-          });
+                const controller = context.arController!;
+                // AR.js registers the pattern asynchronously. Keep its controller
+                // alive until registration finishes, even if the learner leaves.
+                // Disposing earlier nulls patternMarkers under the pending callback.
+                let finishMarkerSetup!: () => void;
+                markerSetup = new Promise(resolve => { finishMarkerSetup = resolve; });
+                const loadMarker = controller.loadMarker.bind(controller);
+                controller.loadMarker = url => loadMarker(url).catch(() => -1).then(id => {
+                  if (!cancelled) {
+                    if (id < 0) {
+                      onArReady?.(false);
+                      onArStatus?.("Marker file failed to load. Prepare offline files again or use 3D mode.");
+                    } else {
+                      onArReady?.(true);
+                      onArStatus?.("Looking for the Tuklas marker...");
+                    }
+                  }
+                  // Let AR.js's promise continuation register this ID before disposal.
+                  window.setTimeout(finishMarkerSetup, 0);
+                  return id;
+                });
+                new THREEx.ArMarkerControls(context, trackedRoot, {
+                  type: "pattern",
+                  patternUrl: tuklasMarkerUrl,
+                  changeMatrixMode: "modelViewMatrix",
+                  minConfidence: 0.7,
+                });
 
                 camera.projectionMatrix.copy(context.getProjectionMatrix());
                 resize();
-                onArReady?.(true);
-                onArStatus?.("Looking for the Tuklas marker...");
               });
             },
             (error: { message?: string }) => {
@@ -222,7 +242,11 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
       resizeObserver.disconnect();
       onMarkerChange?.(false);
       stopCamera();
-      if (arContext?.arController) arContext.dispose?.();
+      if (arContext?.arController) {
+        const context = arContext;
+        if (markerSetup) void markerSetup.then(() => context.dispose?.());
+        else context.dispose?.();
+      }
       const geometries = new Set<THREE.BufferGeometry>();
       const materials = new Set<THREE.Material>();
       scene.traverse(object => {

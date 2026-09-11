@@ -20,7 +20,7 @@ createRoot(document.getElementById("root")!).render(
 // update after a manual hard refresh / cache clear. `controllerchange`
 // fires exactly when a new worker takes over, so reloading there closes
 // that gap: a deploy takes effect on this device's very next check.
-if ("serviceWorker" in navigator) {
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
     try {
       const registration = await navigator.serviceWorker.register("/service-worker.js");

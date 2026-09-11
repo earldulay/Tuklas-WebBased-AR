@@ -1,9 +1,22 @@
 // Run against a local Vite server and a dedicated Chrome --remote-debugging-port=9222 profile.
 // Uses a real AR.js detector with a canvas camera stream; never accesses a physical camera.
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import assert from 'node:assert/strict';
 import { modules } from '../backend/src/data/modules.ts';
-const origin = process.env.TEST_ORIGIN || 'http://localhost:5174';
+const offline = process.env.TEST_OFFLINE === '1';
+const origin = offline ? 'http://127.0.0.1:5186' : process.env.TEST_ORIGIN || 'http://localhost:5174';
+// Stop the real server after preparation: even the worker cannot reach the network.
+const server = offline ? createServer(async (request, response) => {
+  const pathname = new URL(request.url, origin).pathname;
+  try {
+    const path = pathname === '/' ? '/index.html' : pathname;
+    const data = await readFile(new URL('../frontend/dist' + path, import.meta.url));
+    response.setHeader('Content-Type', ({ js: 'application/javascript', css: 'text/css', html: 'text/html', png: 'image/png', svg: 'image/svg+xml', webmanifest: 'application/manifest+json' })[path.split('.').pop()] || 'application/octet-stream');
+    response.end(data);
+  } catch { response.writeHead(404); response.end(); }
+}) : null;
+if (server) await new Promise(resolve => server.listen(5186, '127.0.0.1', resolve));
 const pages = await (await fetch('http://127.0.0.1:9222/json/list')).json();
 const page = pages.find(p => p.type === 'page');
 const socket = new WebSocket(page.webSocketDebuggerUrl);
@@ -23,15 +36,20 @@ async function waitFor(expression, timeout = 20000) { const end = Date.now() + t
 const click = async text => { await evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)}); if (!button) throw Error('Missing button: ' + ${JSON.stringify(text)}); button.click(); })()`); await sleep(130); };
 const card = async text => { await evaluate(`(() => { const button = [...document.querySelectorAll('.module-card')].find(b => b.textContent.includes(${JSON.stringify(text)})); if (!button) throw Error('Missing card'); button.click(); })()`); await sleep(130); };
 await send('Page.enable'); await send('Runtime.enable');
+await send('Network.enable');
+await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+if (offline) await send('Storage.clearDataForOrigin', { origin, storageTypes: 'all' });
 await evaluate(`try { sessionStorage.removeItem('testRole'); } catch { /* New about:blank profile. */ }`);
 await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
 await send('Page.addScriptToEvaluateOnNewDocument', { source: `
 localStorage.setItem('tuklas-user', JSON.stringify({ id: 'browser-test-${Date.now()}-' + (sessionStorage.testRole || 'teacher'), username: 'test', name: 'Browser Test', role: sessionStorage.testRole || 'teacher', sectionId: null }));
 localStorage.setItem('tuklas-token', 'test-only'); localStorage.setItem('tuklas-view-mode', 'fallback');
 const realFetch = window.fetch.bind(window);
+${offline ? `Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => sessionStorage.testOffline !== '1' });` : ''}
 window.__records = [];
 window.fetch = (input, init) => { const url = typeof input === 'string' ? input : input.url; if (url.includes('/api/')) { if (url.endsWith('/sync') && init?.body) { const incoming = JSON.parse(init.body).records; for (const record of incoming) if (!window.__records.some(r => r.id === record.id)) window.__records.push({...record, syncedAt: new Date().toISOString()}); } return Promise.resolve(new Response(JSON.stringify(url.endsWith('/modules') ? ${JSON.stringify(modules)} : { records: window.__records, feedback: [], sections: [], students: [] }), { status: 200 })); } return realFetch(input, init); };
 window.__markerVisible = true;
+${offline ? `const mockFetch = window.fetch; window.fetch = (input, init) => { const url = typeof input === 'string' ? input : input.url; return !navigator.onLine && url.includes('/api/') ? Promise.reject(new TypeError('Offline API unavailable')) : mockFetch(input, init); };` : ''}
 navigator.mediaDevices.getUserMedia = async () => {
  const canvas = document.createElement('canvas'); canvas.width = 640; canvas.height = 480;
  const ctx = canvas.getContext('2d'); const marker = new Image(); marker.src = '/assets/tuklas-marker.png'; await marker.decode();
@@ -42,6 +60,28 @@ navigator.mediaDevices.getUserMedia = async () => {
 };` });
 await send('Page.navigate', { url: origin });
 await waitFor(`document.body.innerText.includes('Preview Lessons')`);
+if (offline) {
+  await waitFor(`!!navigator.serviceWorker.controller`);
+  await waitFor(`document.body.innerText.includes('Preview Lessons')`);
+  await click('Settings');
+  await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.includes('Prepare for Offline Use')).click()`);
+  await waitFor(`document.body.innerText.includes('Ready: 12 experiments cached')`);
+  const cached = await evaluate(`(async () => { const keys = await caches.keys(); const cache = await caches.open(keys.find(k => k.startsWith('tuklas-webar-'))); return (await cache.keys()).map(r => new URL(r.url).pathname); })()`);
+  assert.ok(cached.some(path => path.includes('ScienceScene-')), 'Unvisited 3D chunk is precached');
+  assert.ok(cached.some(path => path.includes('ar-threex-')), 'Unvisited AR chunk is precached');
+  assert.ok(!cached.some(path => path.startsWith('/api/')), 'No API data cached');
+  await evaluate(`sessionStorage.testOffline = '1'`);
+  server.closeAllConnections();
+  await new Promise(resolve => server.close(resolve));
+  await send('Network.enable');
+  await send('Network.setCacheDisabled', { cacheDisabled: true });
+  await send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
+  await send('Network.overrideNetworkState', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
+  await send('Page.reload');
+  await waitFor(`document.body.innerText.includes('Preview Lessons') && !navigator.onLine`);
+  assert.equal(await evaluate(`fetch('/not-cached-offline-probe').then(() => false, () => true)`), true, 'Uncached network request fails');
+  console.log('PASS offline cold reload, unvisited AR/3D chunks precached, HTTP cache disabled.');
+}
 await mkdir('.browser-check/screens', { recursive: true });
 const range = async (index, value) => { await evaluate(`(() => { const input = document.querySelectorAll('input[type=range]')[${index}]; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(String(value))}); input.dispatchEvent(new Event('input', { bubbles: true })); })()`); await sleep(150); };
 for (const experiment of modules) {
@@ -88,6 +128,31 @@ for (const experiment of modules) {
 }
 assert.deepEqual(errors, []);
 console.log('PASS all twelve experiments without browser exceptions.');
+if (offline) {
+  // Hold a real marker load until after leaving AR to reproduce the disposal race.
+  await evaluate(`(() => {
+    const prototype = window.THREEx.ArToolkitContext.prototype;
+    window.__originalArInit = prototype.init;
+    prototype.init = function(ready) { window.__originalArInit.call(this, () => {
+      const load = this.arController.loadMarker.bind(this.arController);
+      this.arController.loadMarker = async url => {
+        window.__markerPending = true;
+        await new Promise(resolve => { window.__releaseMarker = resolve; });
+        try { return await load(url); } finally { window.__markerFinished = true; }
+      };
+      ready();
+    }); };
+  })()`);
+  await click('Preview Lessons'); await card(modules[0].quarter); await card(modules[0].moduleTitle); await card(modules[0].title); await click('Next');
+  await waitFor('window.__markerPending === true');
+  await click('Home');
+  await evaluate('window.__releaseMarker()');
+  await waitFor('window.__markerFinished === true');
+  await sleep(250);
+  assert.deepEqual(errors, []);
+  await evaluate('window.THREEx.ArToolkitContext.prototype.init = window.__originalArInit');
+  console.log('PASS leaving AR while the marker is still loading.');
+}
 // Verify saved stages belong to the selected experiment, including repeat observations.
 await evaluate(`sessionStorage.testRole = 'student';`);
 await send('Page.reload');
@@ -97,12 +162,13 @@ await evaluate(`document.querySelectorAll('fieldset input[type=radio]:first-of-t
 await click('Next');
 await waitFor(`document.querySelector('.three-scene canvas') !== null`);
 await click('Run Trial'); await click('Run Trial');
-assert.equal(await evaluate(`window.__records.filter(r => r.moduleId === 'inertia' && r.stage === 'Observe').length`), 1);
+const studentRecords = offline ? `JSON.parse(localStorage.getItem('tuklas-records') || '[]').filter(r => r.userId === JSON.parse(localStorage.getItem('tuklas-user')).id)` : 'window.__records';
+await waitFor(`${studentRecords}.filter(r => r.moduleId === 'inertia' && r.stage === 'Observe').length === 1`);
 await click('Continue');
 await evaluate(`document.querySelectorAll('textarea:not([readonly])').forEach(input => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, 'At zero net force, the stationary cart remained at rest.'); input.dispatchEvent(new Event('input', { bubbles: true })); })`);
 await click('Submit');
 await waitFor(`document.body.innerText.includes('Great work!')`);
-assert.deepEqual(await evaluate(`window.__records.map(r => r.stage)`), ['Predict', 'Observe', 'Explain']);
+assert.deepEqual(await evaluate(`${studentRecords}.map(r => r.stage)`), ['Predict', 'Observe', 'Explain']);
 await click('Modules'); await card(modules[1].quarter); await card(modules[1].moduleTitle); await card(modules[1].title);
 assert.equal(await evaluate(`document.querySelectorAll('.prediction-question').length`), 3);
 assert.equal(await evaluate(`document.querySelectorAll('input[type=radio]:checked').length`), 0);
@@ -111,5 +177,31 @@ await click('Modules');
 assert.equal(await evaluate(`document.querySelectorAll('.module-card').length`), 4, 'Modules navigation always opens Quarters');
 assert.deepEqual(errors, []);
 console.log('PASS student POE submission, repeat-trial deduplication and experiment isolation. Screenshots in .browser-check/screens.');
+if (offline) {
+  await send('Page.reload');
+  await waitFor(`document.body.innerText.includes('Progress Summary')`);
+  await click('Settings');
+  await waitFor(`document.querySelectorAll('.record-card').length === 3`);
+  assert.equal(await evaluate(`${studentRecords}.every(r => !r.syncedAt)`), true);
+  assert.equal(await evaluate('window.__records.length'), 0, 'No offline uploads');
+  await evaluate(`window.__export = null; const create = URL.createObjectURL.bind(URL); URL.createObjectURL = blob => { window.__export = blob.text(); return create(blob); };`);
+  await click('Export JSON');
+  assert.equal(JSON.parse(await evaluate('window.__export')).length, 3);
+  for (const path of ['/assets/tuklas-marker.png', '/assets/tuklas-marker.patt', '/assets/camera_para.dat']) {
+    assert.equal(await evaluate(`fetch(${JSON.stringify(path)}).then(r => r.ok)`), true);
+  }
+  console.log('PASS offline POE persistence after reload, JSON export, marker and calibration downloads.');
+  await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  await send('Network.overrideNetworkState', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  await evaluate(`sessionStorage.removeItem('testOffline'); window.dispatchEvent(new Event('online'));`);
+  await waitFor(`${studentRecords}.every(r => !!r.syncedAt) && window.__records.length === 3`);
+  console.log('PASS reconnect uploads all three queued stages (mock API).');
+  await evaluate(`(async () => { for (const name of await caches.keys()) { if (name.startsWith('tuklas-webar-')) await (await caches.open(name)).delete('/assets/tuklas-marker.patt'); } })()`);
+  await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.includes('Prepare for Offline Use')).click()`);
+  await waitFor(`document.body.innerText.includes('Offline preparation failed. Check connection and browser storage.')`);
+  assert.equal(await evaluate(`document.body.innerText.includes('Ready: 12 experiments cached')`), false);
+  assert.deepEqual(errors, []);
+  console.log('PASS missing offline file reports preparation failure instead of Ready.');
+}
 await evaluate(`sessionStorage.removeItem('testRole')`);
 socket.close();

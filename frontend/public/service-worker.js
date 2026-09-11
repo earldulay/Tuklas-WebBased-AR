@@ -1,72 +1,46 @@
-const CACHE_NAME = "tuklas-webar-v12";
-const ASSETS = [
-  "/",
-  "/index.html",
-  "/manifest.webmanifest",
-  "/assets/camera_para.dat",
-  "/assets/tuklas-marker.patt",
-  "/assets/tuklas-marker.png",
-  "/assets/tuklas-marker.svg"
-];
+// Vite fills these values with every production asset and a content-based version.
+const VERSION = "__BUILD_VERSION__";
+const CACHE_NAME = `tuklas-webar-${VERSION}`;
+const ASSETS = [/* __BUILD_ASSETS__ */];
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
-  self.skipWaiting();
-});
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))),
-      )
-      .then(() => self.clients.claim()),
-  );
-});
-
-self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
-
-  // Navigations (loading the app shell) always go to the network first, so
-  // a fresh index.html - pointing at the current build's hashed JS/CSS - is
-  // used whenever the device is online. Only offline falls back to cache.
-  if (event.request.mode === "navigate") {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("/index.html", copy));
-          return response;
-        })
-        .catch(() => caches.match("/index.html")),
-    );
-    return;
+async function prepare() {
+  if (!ASSETS.length) throw new Error("Offline preparation requires a production build.");
+  const cache = await caches.open(CACHE_NAME);
+  const missing = [];
+  for (const asset of ASSETS) {
+    if (!(await cache.match(asset))) missing.push(new Request(asset, { cache: "reload" }));
   }
+  await cache.addAll(missing);
+}
 
-  // Everything else (hashed build assets, marker images, the manifest):
-  // stale-while-revalidate. Serve instantly from cache if present, but
-  // always refetch in the background and update the cache, so the next
-  // load - even without a full reload - has the latest version. Hashed
-  // filenames change per build, so this never serves an old build's asset
-  // under a new build's URL.
-  event.respondWith(
-    caches.open(CACHE_NAME).then((cache) =>
-      cache.match(event.request).then((cached) => {
-        const network = fetch(event.request)
-          .then((response) => {
-            if (response && response.status === 200) cache.put(event.request, response.clone());
-            return response;
-          })
-          .catch(() => cached);
-        return cached || network;
-      }),
-    ),
-  );
+self.addEventListener("install", event => {
+  event.waitUntil(prepare().then(() => self.skipWaiting()));
 });
 
-self.addEventListener("message", (event) => {
-  if (event.data?.type === "CACHE_NOW") {
-    event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
-  }
+self.addEventListener("activate", event => {
+  event.waitUntil(caches.keys().then(keys => Promise.all(
+    keys.filter(key => key.startsWith("tuklas-webar-") && key !== CACHE_NAME)
+      .map(key => caches.delete(key)),
+  )).then(() => self.clients.claim()));
+});
+
+self.addEventListener("fetch", event => {
+  const url = new URL(event.request.url);
+  // Never cache authenticated API responses or unrelated external resources.
+  if (event.request.method !== "GET" || url.origin !== self.location.origin ||
+      url.pathname === "/api" || url.pathname.startsWith("/api/")) return;
+  const asset = event.request.mode === "navigate" ? "/index.html" : url.pathname;
+  if (!ASSETS.includes(asset)) return;
+  // Keep HTML and its hashed imports from the same fully downloaded build.
+  event.respondWith(caches.open(CACHE_NAME).then(async cache =>
+    (await cache.match(asset)) || fetch(event.request),
+  ));
+});
+
+self.addEventListener("message", event => {
+  if (event.data?.type !== "CACHE_NOW") return;
+  event.waitUntil(prepare().then(
+    () => event.ports[0]?.postMessage({ ok: true }),
+    error => event.ports[0]?.postMessage({ ok: false, error: error.message }),
+  ));
 });

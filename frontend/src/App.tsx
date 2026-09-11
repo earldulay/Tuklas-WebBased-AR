@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent } from "re
 import { ApiError, createSection, createSectionStudent, fetchClassProgress, fetchModules, fetchMyRecords, getSection, listSections, login as apiLogin, registerTeacher, resetStudentProgress, submitFeedback, syncRecords } from "./lib/api";
 import { clearSession, getStoredUser, setSession } from "./lib/auth";
 import { clearRecords, loadRecords, replaceRecords, saveRecord } from "./lib/storage";
+import { prepareOfflineFiles } from "./lib/offline";
 import { modules as fallbackModules } from "./data/modules";
 import { getObservationModel, getObservationDefaults, formatControlValue, initialLabState } from "./lib/experiments";
 import { ExperimentControls } from "./components/ExperimentControls";
@@ -28,16 +29,6 @@ const LIVE_REFRESH_MS = 15000;
 function stagesFor(recordsList: ActivityRecord[], moduleId: string): Set<Stage> {
   return new Set(recordsList.filter((record) => record.moduleId === moduleId).map((record) => record.stage));
 }
-const offlineAssets = [
-  "/",
-  "/index.html",
-  "/manifest.webmanifest",
-  "/service-worker.js",
-  "/assets/camera_para.dat",
-  "/assets/tuklas-marker.patt",
-  "/assets/tuklas-marker.png",
-  "/assets/tuklas-marker.svg",
-];
 
 interface ExperimentTrial {
   id: number;
@@ -532,13 +523,9 @@ function App() {
   }
 
   async function prepareOffline() {
+    setOfflineStatus("Downloading and verifying offline files...");
     try {
-      if ("caches" in window) {
-        const cache = await caches.open("tuklas-webar-runtime");
-        await cache.addAll(offlineAssets);
-      }
-      const registration = await navigator.serviceWorker?.ready;
-      registration?.active?.postMessage({ type: "CACHE_NOW" });
+      await prepareOfflineFiles();
       const estimate = await navigator.storage?.estimate?.();
       const quotaMb = estimate?.quota ? `${Math.round(estimate.quota / 1024 / 1024)} MB storage quota` : "storage ready";
       setOfflineStatus(`Ready: ${modules.length} experiments cached; ${quotaMb}.`);

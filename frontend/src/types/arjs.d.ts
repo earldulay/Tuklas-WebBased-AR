@@ -13,6 +13,7 @@ declare global {
     update(element: HTMLElement): void;
     getProjectionMatrix(): THREE.Matrix4;
     arController?: {
+      loadMarker(url: string): Promise<number>;
       canvas?: HTMLCanvasElement;
       dispose?: () => void;
     };
