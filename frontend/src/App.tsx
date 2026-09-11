@@ -1,8 +1,10 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
 import { ApiError, createSection, createSectionStudent, fetchClassProgress, fetchModules, fetchMyRecords, getSection, listSections, login as apiLogin, registerTeacher, resetStudentProgress, submitFeedback, syncRecords } from "./lib/api";
 import { clearSession, getStoredUser, setSession } from "./lib/auth";
 import { clearRecords, loadRecords, replaceRecords, saveRecord } from "./lib/storage";
 import { modules as fallbackModules } from "./data/modules";
+import { getObservationModel, getObservationDefaults, formatControlValue, initialLabState } from "./lib/experiments";
+import { ExperimentControls } from "./components/ExperimentControls";
 import type { ActivityRecord, AuthUser, ClassProgressRecord, Feedback, LearningModule, Role, Screen, Section, SectionSummary, Stage, ViewMode } from "./types/domain";
 import { Activity, CircuitBoard, Download, Earth, Microscope, Printer, Thermometer, type LucideIcon } from "lucide-react";
 
@@ -37,33 +39,11 @@ const offlineAssets = [
   "/assets/tuklas-marker.svg",
 ];
 
-interface ObservationModel {
-  title: string;
-  controlA: {
-    label: string;
-    min: number;
-    max: number;
-    step: number;
-    unit: string;
-  };
-  controlB: {
-    label: string;
-    min: number;
-    max: number;
-    step: number;
-    unit: string;
-  };
-  readouts: { label: string; value: string }[];
-  recordText: string;
-}
-
 interface ExperimentTrial {
   id: number;
   values: string[];
 }
 
-const organelleNames = ["None", "Nucleus", "Mitochondria", "Chloroplast", "Cell membrane"];
-const earthLayerNames = ["Crust", "Mantle", "Outer core", "Inner core"];
 const moduleIcons: Record<string, LucideIcon> = {
   motion: Activity,
   electricity: CircuitBoard,
@@ -73,183 +53,8 @@ const moduleIcons: Record<string, LucideIcon> = {
 };
 
 function ModuleIcon({ moduleId }: { moduleId: string }) {
-  const Icon = moduleIcons[moduleId] || Activity;
+  const Icon = moduleIcons[fallbackModules.find(item => item.id === moduleId)?.groupId || moduleId] || Activity;
   return <span className="module-icon" aria-hidden="true"><Icon size={24} strokeWidth={2.2} /></span>;
-}
-
-function getObservationModel(moduleId: string, controlA: number, controlB: number): ObservationModel {
-  if (moduleId === "electricity") {
-    const current = controlA / controlB;
-    return {
-      title: "Series Circuit Model",
-      controlA: { label: "Voltage", min: 3, max: 12, step: 1, unit: "V" },
-      controlB: { label: "Resistance", min: 1, max: 10, step: 1, unit: "ohm" },
-      readouts: [
-        { label: "Voltage", value: `${controlA} V` },
-        { label: "Resistance", value: `${controlB} ohm` },
-        { label: "Current", value: `${current.toFixed(2)} A` },
-      ],
-      recordText: `Voltage: ${controlA} V; Resistance: ${controlB} ohm; Current: ${current.toFixed(2)} A`,
-    };
-  }
-
-  if (moduleId === "materials") {
-    const state = controlA <= 0 ? "Solid" : controlA < 100 ? "Liquid" : "Gas";
-    const arrangement = state === "Solid" ? "Tightly packed, ordered" : state === "Liquid" ? "Close, able to flow" : "Far apart";
-    const motion = state === "Solid" ? "Vibrating" : state === "Liquid" ? "Sliding" : "Fast and random";
-    return {
-      title: "States of Matter Model",
-      controlA: { label: "Temperature", min: -20, max: 120, step: 10, unit: "C" },
-      controlB: { label: "Particles", min: 12, max: 30, step: 6, unit: "" },
-      readouts: [
-        { label: "Temperature", value: `${controlA} C` },
-        { label: "State", value: state },
-        { label: "Arrangement", value: arrangement },
-        { label: "Particle motion", value: motion },
-      ],
-      recordText: `Temperature: ${controlA} C; State: ${state}; Arrangement: ${arrangement}; Motion: ${motion}`,
-    };
-  }
-
-  if (moduleId === "life") {
-    const removed = organelleNames[controlA] || organelleNames[0];
-    const functions = ["All major functions available", "Controls cell activities", "Releases usable energy", "Makes food using light", "Controls entry and exit"];
-    return {
-      title: "Cell Parts Model",
-      controlA: { label: "Removed organelle", min: 0, max: 4, step: 1, unit: "" },
-      controlB: { label: "Model rotation", min: 0, max: 3, step: 1, unit: "turn" },
-      readouts: [
-        { label: "Removed", value: removed },
-        { label: "Normal function", value: functions[controlA] },
-        { label: "Cell result", value: controlA === 0 ? "Functioning normally" : "Function impaired" },
-      ],
-      recordText: `Removed: ${removed}; Normal function: ${functions[controlA]}; Result: ${controlA === 0 ? "Functioning normally" : "Function impaired"}`,
-    };
-  }
-
-  if (moduleId === "earth-space") {
-    const layer = earthLayerNames[controlB] || earthLayerNames[0];
-    const compositions = ["Solid rock", "Hot, slowly flowing rock", "Liquid iron and nickel", "Solid iron and nickel"];
-    return {
-      title: "Earth Layers Model",
-      controlA: { label: "Layer separation", min: 0, max: 3, step: 1, unit: "" },
-      controlB: { label: "Selected layer", min: 0, max: 3, step: 1, unit: "" },
-      readouts: [
-        { label: "Selected layer", value: layer },
-        { label: "Composition", value: compositions[controlB] },
-        { label: "Position", value: `${controlB + 1} of 4, outside to inside` },
-      ],
-      recordText: `Selected layer: ${layer}; Composition: ${compositions[controlB]}; Separation: ${controlA}/3`,
-    };
-  }
-
-  const acceleration = controlA / controlB;
-  return {
-    title: "Force and Motion Model",
-    controlA: { label: "Force", min: 0, max: 6, step: 1, unit: "N" },
-    controlB: { label: "Mass", min: 1, max: 4, step: 1, unit: "kg" },
-    readouts: [
-      { label: "Force", value: `${controlA} N` },
-      { label: "Mass", value: `${controlB} kg` },
-      { label: "Acceleration", value: `${acceleration.toFixed(1)} m/s^2` },
-    ],
-    recordText: `Force: ${controlA} N; Mass: ${controlB} kg; Acceleration: ${acceleration.toFixed(1)} m/s^2`,
-  };
-}
-
-function getObservationDefaults(moduleId: string) {
-  if (moduleId === "electricity") return { controlA: 6, controlB: 3 };
-  if (moduleId === "materials") return { controlA: 20, controlB: 24 };
-  if (moduleId === "life") return { controlA: 0, controlB: 0 };
-  if (moduleId === "earth-space") return { controlA: 0, controlB: 0 };
-  return { controlA: 2, controlB: 1 };
-}
-
-function formatControlValue(moduleId: string, control: "a" | "b", value: number, unit: string) {
-  if (moduleId === "life" && control === "a") return organelleNames[value];
-  if (moduleId === "earth-space" && control === "b") return earthLayerNames[value];
-  return `${value}${unit ? ` ${unit}` : ""}`;
-}
-
-function ActivityVisual({
-  moduleId,
-  controlA,
-  controlB,
-  trialPulse,
-  onControlAChange,
-  onControlBChange,
-}: {
-  moduleId: string;
-  controlA: number;
-  controlB: number;
-  trialPulse: number;
-  onControlAChange?: (value: number) => void;
-  onControlBChange?: (value: number) => void;
-}) {
-  const trackRef = useRef<HTMLDivElement | null>(null);
-
-  if (moduleId === "motion") {
-    const acceleration = controlA / controlB;
-    const cartDistance = Math.min(210, 26 + acceleration * 46);
-    const setForceFromPointer = (clientX: number) => {
-      const track = trackRef.current;
-      if (!track || !onControlAChange) return;
-      const bounds = track.getBoundingClientRect();
-      const ratio = Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width));
-      onControlAChange(Math.round(ratio * 6));
-    };
-
-    return (
-      <>
-        <ScienceScene moduleId={moduleId} controlA={controlA} controlB={controlB} acceleration={acceleration} force={controlA} mass={controlB} viewMode="fallback" />
-        <div className="track" ref={trackRef} onPointerDown={(event) => setForceFromPointer(event.clientX)} />
-        <div
-          className="cart draggable-cart"
-          role="slider"
-          aria-label="Force"
-          aria-valuemin={0}
-          aria-valuemax={6}
-          aria-valuenow={controlA}
-          tabIndex={0}
-          style={{ transform: `translateX(${trialPulse ? cartDistance : Math.max(0, controlA * 16)}px)` }}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowRight") onControlAChange?.(Math.min(6, controlA + 1));
-            if (event.key === "ArrowLeft") onControlAChange?.(Math.max(0, controlA - 1));
-          }}
-          onPointerDown={(event) => {
-            event.currentTarget.setPointerCapture(event.pointerId);
-            setForceFromPointer(event.clientX);
-          }}
-          onPointerMove={(event) => {
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) setForceFromPointer(event.clientX);
-          }}
-        >
-          <span>{controlB} kg</span>
-        </div>
-        <div className="force-arrow" style={{ transform: `scaleX(${Math.max(0.2, controlA / 3)})` }} />
-        <div className="hand" aria-hidden="true" />
-        <div className="mass-stack" aria-label="Mass blocks">
-          {[1, 2, 3, 4].map((mass) => (
-            <button className={controlB === mass ? "active" : ""} key={mass} onClick={() => onControlBChange?.(mass)}>
-              {mass}
-            </button>
-          ))}
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <ScienceScene
-      moduleId={moduleId}
-      controlA={controlA}
-      controlB={controlB}
-      acceleration={controlA / Math.max(1, controlB)}
-      force={controlA}
-      mass={controlB}
-      viewMode="fallback"
-    />
-  );
 }
 
 function App() {
@@ -288,8 +93,12 @@ function App() {
   const [sectionFormError, setSectionFormError] = useState("");
   const [screen, setScreen] = useState<Screen>("home");
   const [history, setHistory] = useState<Screen[]>([]);
+  const [selectedQuarter, setSelectedQuarter] = useState<number | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [lab, setLab] = useState(initialLabState);
+  const [markerDetected, setMarkerDetected] = useState(false);
   const [modules, setModules] = useState<LearningModule[]>(fallbackModules);
-  const [activeModule, setActiveModule] = useState<LearningModule>(fallbackModules[0]);
+  const [activeModule, setActiveModuleState] = useState<LearningModule>(fallbackModules[0]);
   const [records, setRecords] = useState<ActivityRecord[]>([]);
   const [query, setQuery] = useState("");
   const [selectedPredictions, setSelectedPredictions] = useState<string[]>([]);
@@ -298,19 +107,19 @@ function App() {
   const [explanation, setExplanation] = useState("");
   const [reflection, setReflection] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem("tuklas-view-mode") as ViewMode | null) || "ar");
-  const [controlA, setControlA] = useState(2);
-  const [controlB, setControlB] = useState(1);
+  const [controlA, setControlA] = useState(0);
+  const [controlB, setControlB] = useState(0);
   const [trialPulse, setTrialPulse] = useState(0);
   const [experimentTrials, setExperimentTrials] = useState<ExperimentTrial[]>([]);
   const [toast, setToast] = useState("");
   const [online, setOnline] = useState(navigator.onLine);
-  const [offlineStatus, setOfflineStatus] = useState("Cache app shell, five experiments, marker, and local records support.");
+  const [offlineStatus, setOfflineStatus] = useState("Cache app shell, twelve experiments, marker, and local records support.");
   const [deviceStatus, setDeviceStatus] = useState("Camera, WebGL, service worker, and storage readiness.");
   const [cameraStatus, setCameraStatus] = useState("Camera is off.");
   const [cameraReady, setCameraReady] = useState(false);
 
   const visibleModules = useMemo(
-    () => modules.filter((item) => `${item.title} ${item.subtitle} ${item.quarter}`.toLowerCase().includes(query.toLowerCase())),
+    () => modules.filter((item) => `${item.title} ${item.subtitle} ${item.quarter} ${item.moduleTitle}`.toLowerCase().includes(query.toLowerCase())),
     [modules, query],
   );
   // A student's real progress, derived straight from their own submitted
@@ -334,7 +143,7 @@ function App() {
   const overallCompleted = moduleProgress.reduce((total, item) => total + item.completed, 0);
   const overallTotal = modules.length * REQUIRED_STAGES.length;
   const overallPercent = overallTotal ? Math.round((overallCompleted / overallTotal) * 100) : 0;
-  const observationModel = getObservationModel(activeModule.id, controlA, controlB);
+  const observationModel = getObservationModel(activeModule.id, controlA, controlB, lab);
   const classSummary = useMemo(() => {
     return students.map((student) => {
       const studentRecords = classRecords.filter((record) => record.userId === student.id);
@@ -352,7 +161,7 @@ function App() {
   }, [students, classRecords, modules]);
 
   useEffect(() => {
-    fetchModules().then(setModules).catch(() => undefined);
+    fetchModules().then(items => { if (items.length === fallbackModules.length && items.every(item => item.groupId && fallbackModules.some(local => local.id === item.id))) setModules(items); }).catch(() => undefined);
   }, []);
 
   // Records are scoped to whichever account is logged in - reload (or
@@ -469,11 +278,16 @@ function App() {
 
   useEffect(() => {
     const defaults = getObservationDefaults(activeModule.id);
+    setLab(initialLabState());
+    setMarkerDetected(false);
     setControlA(defaults.controlA);
     setControlB(defaults.controlB);
     setTrialPulse(0);
     setExperimentTrials([]);
     setPredictionNote("");
+    setEvidence("");
+    setExplanation("");
+    setReflection("");
 
     if (isTeacherPreview) {
       // Teacher Preview answers Predict and Explain correctly up front so a
@@ -487,18 +301,29 @@ function App() {
     }
   }, [activeModule.id, isTeacherPreview]);
 
+  function setActiveModule(module: LearningModule) {
+    const defaults = getObservationDefaults(module.id);
+    setControlA(defaults.controlA);
+    setControlB(defaults.controlB);
+    setLab(initialLabState());
+    setActiveModuleState(module);
+  }
+
   function showToast(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
   }
 
   function goTo(nextScreen: Screen, push = true) {
+    if (nextScreen === "modules" && push) { setSelectedQuarter(null); setSelectedGroup(null); setQuery(""); }
     if (push && screen !== nextScreen) setHistory((current) => [...current, screen]);
     setScreen(nextScreen);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function goBack() {
+    if (screen === "modules" && selectedGroup) { setSelectedGroup(null); return; }
+    if (screen === "modules" && selectedQuarter) { setSelectedQuarter(null); return; }
     const previous = history.at(-1) || "home";
     setHistory((current) => current.slice(0, -1));
     goTo(previous, false);
@@ -572,7 +397,7 @@ function App() {
   // (see the fetchMyRecords effect above), unlocking the screen there too.
   async function handleResetProgress(studentId: string, moduleId?: string) {
     const confirmed = window.confirm(
-      moduleId ? "Reset this student's progress for this module? They'll be able to redo it." : "Reset ALL of this student's progress? They'll be able to redo every module.",
+      moduleId ? "Reset this student's progress for this experiment? They'll be able to redo it." : "Reset ALL of this student's progress? They'll be able to redo every module.",
     );
     if (!confirmed) return;
 
@@ -713,7 +538,7 @@ function App() {
       registration?.active?.postMessage({ type: "CACHE_NOW" });
       const estimate = await navigator.storage?.estimate?.();
       const quotaMb = estimate?.quota ? `${Math.round(estimate.quota / 1024 / 1024)} MB storage quota` : "storage ready";
-      setOfflineStatus(`Ready: ${modules.length} modules cached; ${quotaMb}.`);
+      setOfflineStatus(`Ready: ${modules.length} experiments cached; ${quotaMb}.`);
       showToast("Offline files prepared. Reopen once in airplane mode to verify.");
     } catch {
       setOfflineStatus("Offline preparation failed. Check connection and browser storage.");
@@ -756,7 +581,7 @@ function App() {
 
   const titles: Record<Screen, [string, string]> = {
     home: ["Workspace", "Tuklas AR Science Lab"],
-    modules: ["Lessons", "Grade 9 Science Experiments"],
+    modules: ["Modules", "Grade 9 MATATAG Science"],
     detail: ["Predict", activeModule.title],
     observe: [viewMode === "ar" ? "Camera Observation" : "3D Observation", activeModule.title],
     explain: ["Explain", activeModule.title],
@@ -820,7 +645,7 @@ function App() {
   return (
     <div className={`${role}-mode`}>
       <header className="app-header">
-        <button className={`back-button ${history.length > 0 && screen !== "home" ? "visible" : ""}`} onClick={goBack} aria-label="Go back">&lt;</button>
+        <button className={`back-button ${(history.length > 0 || selectedQuarter !== null) && screen !== "home" ? "visible" : ""}`} onClick={goBack} aria-label="Go back">&lt;</button>
         <div>
           <p className="eyebrow">{titles[screen][0]}</p>
           <h1>{titles[screen][1]}</h1>
@@ -866,7 +691,7 @@ function App() {
             ) : (
               <article className="panel-card overall-progress">
                 <div className="row-between">
-                  <div><p className="eyebrow">All Modules</p><h2>Progress Summary</h2></div>
+                  <div><p className="eyebrow">All Experiments</p><h2>Progress Summary</h2></div>
                   <strong className="overall-percent">{overallPercent}%</strong>
                 </div>
                 <div className="progress-track overall-track"><span style={{ width: `${overallPercent}%` }} /></div>
@@ -903,19 +728,25 @@ function App() {
 
         {screen === "modules" && (
           <section className="screen active">
-            <label className="search-box">
-              <span>Search modules</span>
-              <input type="search" placeholder="Search modules..." value={query} onChange={(event) => setQuery(event.target.value)} />
-            </label>
+            <nav className="curriculum-breadcrumb" aria-label="Curriculum navigation">
+              <button onClick={() => { setSelectedQuarter(null); setSelectedGroup(null); }}>Quarters</button>
+              {selectedQuarter !== null && <><span> / </span><button onClick={() => setSelectedGroup(null)}>Quarter {selectedQuarter}</button></>}
+              {selectedGroup && <><span> / </span><span>{modules.find(m => m.groupId === selectedGroup)?.moduleTitle}</span></>}
+            </nav>
+            <label className="search-box"><span>Search experiments</span><input type="search" placeholder="Search topics or experiments..." value={query} onChange={event => setQuery(event.target.value)} /></label>
+            <h2>{selectedGroup ? "Experiments" : selectedQuarter ? "Modules" : "Quarters"}</h2>
             <div className="module-list">
-              {visibleModules.map((item) => (
-                <button className="module-card" key={item.id} onClick={() => { setActiveModule(item); goTo("detail"); }}>
-                  <ModuleIcon moduleId={item.id} />
-                  <span><strong>{item.title}</strong><small>{item.subtitle}</small></span>
-                  <small>{item.quarter}</small>
-                  <span aria-hidden="true">&gt;</span>
-                </button>
-              ))}
+              {!selectedQuarter && [1, 2, 3, 4].map(quarter => {
+                const items = visibleModules.filter(item => item.quarterNumber === quarter);
+                if (!items.length) return null;
+                return <button className="module-card" key={quarter} onClick={() => setSelectedQuarter(quarter)}><span className="module-icon">Q{quarter}</span><span><strong>{items[0].quarter}</strong><small>{new Set(items.map(i => i.groupId)).size} module(s), {items.length} experiments</small></span><span aria-hidden="true">&gt;</span></button>;
+              })}
+              {selectedQuarter && !selectedGroup && [...new Set(visibleModules.filter(item => item.quarterNumber === selectedQuarter).map(item => item.groupId))].map(group => {
+                const items = visibleModules.filter(item => item.groupId === group);
+                return <button className="module-card" key={group} onClick={() => setSelectedGroup(group)}><ModuleIcon moduleId={group} /><span><strong>{items[0].moduleNumber}. {items[0].moduleTitle}</strong><small>{items.length} POE experiments</small></span><span aria-hidden="true">&gt;</span></button>;
+              })}
+              {selectedGroup && visibleModules.filter(item => item.groupId === selectedGroup).map(item => <button className="module-card" key={item.id} onClick={() => { setActiveModule(item); goTo("detail"); }}><ModuleIcon moduleId={item.id} /><span><strong>{item.title}</strong><small>{item.subtitle}</small><small>{stagesFor(records, item.id).size ? `${REQUIRED_STAGES.filter(stage => stagesFor(records, item.id).has(stage)).length}/3 POE stages complete` : "Ready to explore"}</small></span><span aria-hidden="true">&gt;</span></button>)}
+              {!visibleModules.some(item => (!selectedQuarter || item.quarterNumber === selectedQuarter) && (!selectedGroup || item.groupId === selectedGroup)) && <p>No matching experiments. Try another search.</p>}
             </div>
           </section>
         )}
@@ -926,7 +757,7 @@ function App() {
             <article className="panel-card">
               <div className="module-summary">
                 <ModuleIcon moduleId={activeModule.id} />
-                <div><h2>{activeModule.title}</h2><p>{activeModule.quarter}</p><small>Estimated time: {activeModule.time}</small></div>
+                <div><h2>{activeModule.title}</h2><p>{activeModule.quarter} / {activeModule.moduleTitle}</p><small>Estimated time: {activeModule.time}</small></div>
               </div>
             </article>
             <article className="panel-card"><p className="eyebrow">Learning Task</p><p>{activeModule.task}</p></article>
@@ -938,7 +769,7 @@ function App() {
               <>
                 <article className="panel-card locked-notice">
                   <p className="eyebrow">Prediction Submitted</p>
-                  <p>You already submitted your prediction for this module. Ask your teacher to reset it if you need to try again.</p>
+                  <p>You already submitted your prediction for this experiment. Ask your teacher to reset it if you need to try again.</p>
                   <textarea className="readonly-field" rows={6} value={predictionReview} readOnly aria-readonly="true" aria-label="Your submitted prediction" />
                   <button className="primary-button" onClick={() => { setTrialPulse(0); goTo("observe"); }}>Continue to Observe</button>
                 </article>
@@ -966,7 +797,7 @@ function App() {
                 </div>
                 <textarea rows={3} placeholder="Why do you think so? (optional)" value={predictionNote} onChange={(event) => setPredictionNote(event.target.value)} />
                 <button className="primary-button" onClick={async () => {
-                  if (activeModule.predictions.some((_, index) => !selectedPredictions[index])) return showToast("Answer all three prediction questions.");
+                  if (activeModule.predictions.some((_, index) => !selectedPredictions[index])) return showToast("Answer all prediction questions.");
                   const answers = activeModule.predictions.map((prediction, index) => `${index + 1}. ${prediction.question}\nAnswer: ${selectedPredictions[index]}`).join("\n\n");
                   const text = `${answers}${predictionNote.trim() ? `\n\nReasoning: ${predictionNote.trim()}` : ""}`;
                   if (!isTeacherPreview) {
@@ -991,29 +822,7 @@ function App() {
               </div>
               <div className={`ar-frame ${viewMode === "fallback" ? "fallback-mode" : ""}`}>
                 <Suspense fallback={null}>
-                  {viewMode === "ar" && (
-                    <ScienceScene
-                      moduleId={activeModule.id}
-                      controlA={controlA}
-                      controlB={controlB}
-                      acceleration={controlA / controlB}
-                      force={controlA}
-                      mass={controlB}
-                      viewMode="ar"
-                      onArReady={setCameraReady}
-                      onArStatus={setCameraStatus}
-                    />
-                  )}
-                  {viewMode === "fallback" && (
-                    <ActivityVisual
-                      moduleId={activeModule.id}
-                      controlA={controlA}
-                      controlB={controlB}
-                      trialPulse={trialPulse}
-                      onControlAChange={setControlA}
-                      onControlBChange={setControlB}
-                    />
-                  )}
+                  <ScienceScene moduleId={activeModule.id} controlA={controlA} controlB={controlB} lab={lab} trialPulse={trialPulse} viewMode={viewMode} onArReady={setCameraReady} onArStatus={setCameraStatus} onMarkerChange={setMarkerDetected} />
                 </Suspense>
               </div>
               {viewMode === "ar" && (
@@ -1026,31 +835,11 @@ function App() {
               <p className="eyebrow">Observation Prompt</p>
               <p>{activeModule.observe}</p>
               <div className="control-grid">
-                <label><span>{observationModel.controlA.label} <strong>{formatControlValue(activeModule.id, "a", controlA, observationModel.controlA.unit)}</strong></span><input type="range" min={observationModel.controlA.min} max={observationModel.controlA.max} step={observationModel.controlA.step} value={controlA} onChange={(event) => setControlA(Number(event.target.value))} /></label>
+                <label><span>{observationModel.controlA.label} <strong>{formatControlValue(activeModule.id, "a", controlA, observationModel.controlA.unit)}</strong></span><input type="range" min={observationModel.controlA.min} max={observationModel.controlA.max} step={observationModel.controlA.step} value={controlA} onChange={(event) => { setControlA(Number(event.target.value)); if (activeModule.id === "bonding") setLab(current => ({ ...current, electrons: 0 })); }} /></label>
                 <label><span>{observationModel.controlB.label} <strong>{formatControlValue(activeModule.id, "b", controlB, observationModel.controlB.unit)}</strong></span><input type="range" min={observationModel.controlB.min} max={observationModel.controlB.max} step={observationModel.controlB.step} value={controlB} onChange={(event) => setControlB(Number(event.target.value))} /></label>
               </div>
-              {activeModule.id === "materials" && (
-                <div className="experiment-presets" aria-label="Temperature presets">
-                  {[[-10, "Cool to solid"], [20, "Warm to liquid"], [110, "Heat to gas"]].map(([value, label]) => (
-                    <button className={controlA === value ? "active" : ""} key={label} onClick={() => setControlA(Number(value))}>{label}</button>
-                  ))}
-                </div>
-              )}
-              {activeModule.id === "life" && (
-                <div className="experiment-presets" aria-label="Organelle removal choices">
-                  {organelleNames.map((name, index) => <button className={controlA === index ? "active" : ""} key={name} onClick={() => setControlA(index)}>{index === 0 ? "Restore all" : `Remove ${name}`}</button>)}
-                </div>
-              )}
-              {activeModule.id === "earth-space" && (
-                <>
-                  <div className="experiment-presets" aria-label="Earth layer separation">
-                    {[[0, "Close layers"], [1, "Open slightly"], [3, "Separate fully"]].map(([value, label]) => <button className={controlA === value ? "active" : ""} key={label} onClick={() => setControlA(Number(value))}>{label}</button>)}
-                  </div>
-                  <div className="experiment-presets" aria-label="Earth layer choices">
-                    {earthLayerNames.map((name, index) => <button className={controlB === index ? "active" : ""} key={name} onClick={() => setControlB(index)}>{name}</button>)}
-                  </div>
-                </>
-              )}
+              <ExperimentControls key={`${activeModule.id}-${controlA}`} id={activeModule.id} a={controlA} lab={lab} onChange={setLab} />
+              <button className="text-button" onClick={() => { const defaults = getObservationDefaults(activeModule.id); setControlA(defaults.controlA); setControlB(defaults.controlB); setLab(initialLabState()); setTrialPulse(p => p + 1); }}>Reset model</button>
               <div className="data-readout">
                 {observationModel.readouts.map((readout) => <span key={readout.label}>{readout.label} <strong>{readout.value}</strong></span>)}
               </div>
@@ -1064,12 +853,12 @@ function App() {
                   </div>
                 )) : <p className="muted">No trials yet. Change a variable, then run a trial.</p>}
               </div>
-              {observeLocked && <p className="teacher-preview-note">Observation already recorded for this module. Ask your teacher to reset it if you need to redo it.</p>}
-              <button className="primary-button" disabled={observeLocked || (viewMode === "ar" && !cameraReady)} onClick={async () => {
-                if (viewMode === "ar" && !cameraReady) return showToast("Start the camera before saving an AR trial.");
+              {observeLocked && <p className="teacher-preview-note">Observation saved. You can continue comparing trials; ask your teacher to reset the submission to replace it.</p>}
+              <button className="primary-button" disabled={(viewMode === "ar" && (!cameraReady || !markerDetected))} onClick={async () => {
+                if (viewMode === "ar" && (!cameraReady || !markerDetected)) return showToast("Detect the Tuklas marker before saving an AR trial.");
                 setTrialPulse((current) => current + 1);
                 setExperimentTrials((current) => [...current, getExperimentTrial()]);
-                if (!isTeacherPreview) {
+                if (!isTeacherPreview && !observeLocked) {
                   const next = await addRecord("Observe", `Mode: ${viewMode}; ${observationModel.recordText}`);
                   await syncUnsyncedRecords(next);
                 }
@@ -1085,7 +874,7 @@ function App() {
             {explainLocked ? (
               <article className="panel-card locked-notice">
                 <p className="eyebrow">Explanation Submitted</p>
-                <p>You already submitted your explanation for this module. Ask your teacher to reset it if you need to try again.</p>
+                <p>You already submitted your explanation for this experiment. Ask your teacher to reset it if you need to try again.</p>
                 <textarea className="readonly-field" rows={6} value={existingExplainText} readOnly aria-readonly="true" aria-label="Your submitted explanation" />
                 <button className="primary-button" onClick={() => goTo("result")}>View Results</button>
               </article>
@@ -1277,7 +1066,7 @@ function App() {
                       <small>{record.stage}</small>
                       <p>{record.text}</p>
                     </article>
-                  )) : <p className="muted">No submission found for this module.</p>}
+                  )) : <p className="muted">No submission found for this experiment.</p>}
                 </div>
               </article>
               <article className="panel-card">
@@ -1294,17 +1083,16 @@ function App() {
         })()}
       </main>
 
-      <nav className="bottom-nav" aria-label="Primary navigation">
-        {(isTeacherPreview ? (["home", "classes", "settings"] as Screen[]) : (["home", "modules", "settings"] as Screen[])).map((item) => {
+      <nav className="bottom-nav" aria-label="Primary navigation" style={{ gridTemplateColumns: `repeat(${isTeacherPreview ? 4 : 3}, 1fr)` }}>
+        {(isTeacherPreview ? (["home", "modules", "classes", "settings"] as Screen[]) : (["home", "modules", "settings"] as Screen[])).map((item) => {
           const previewFlowScreens: Screen[] = ["modules", "detail", "observe", "explain", "result"];
           const isActive =
             screen === item ||
-            (screen === "detail" && item === "modules") ||
-            ((screen === "section" || screen === "grade") && item === "classes") ||
-            (isTeacherPreview && item === "home" && previewFlowScreens.includes(screen));
+            (item === "modules" && previewFlowScreens.includes(screen)) ||
+            ((screen === "section" || screen === "grade") && item === "classes");
           return (
             <button key={item} className={isActive ? "active" : ""} onClick={() => goTo(item)}>
-              {item === "modules" ? "Lessons" : item === "classes" ? "Classes" : item[0].toUpperCase() + item.slice(1)}
+              {item === "modules" ? "Modules" : item === "classes" ? "Classes" : item[0].toUpperCase() + item.slice(1)}
             </button>
           );
         })}

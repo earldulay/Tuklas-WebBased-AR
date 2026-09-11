@@ -691,6 +691,24 @@ input[type="range"] {
   pointer-events: none;
 }
 
+.curriculum-breadcrumb { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+.curriculum-breadcrumb button { border: 0; background: transparent; color: var(--blue); padding: 8px 0; text-decoration: underline; }
+.module-card > span { min-width: 0; }
+.module-card strong, .module-card small { overflow-wrap: anywhere; }
+.bond-workbench, .dna-workbench, .earth-workbench { margin: 16px 0; }
+.bond-workbench button, .earth-workbench button { min-height: 44px; padding: 10px 14px; margin: 4px; border: 1px solid var(--line); border-radius: 8px; background: #edf5fc; color: var(--ink); }
+.bond-workbench .electron-token { background: #ffe9a4; touch-action: none; cursor: grab; }
+.bond-workbench [data-electron-target] { border: 2px dashed var(--blue); }
+.dna-workbench fieldset { margin: 12px 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.base-choice { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; width: 100px; margin: 8px; }
+.base-choice select { min-height: 44px; padding: 6px; }
+.base-choice small { flex-basis: 100%; }
+.earth-workbench li { margin-bottom: 8px; }
+.data-readout strong { overflow-wrap: anywhere; }
+.screen, .screen > *, .ar-panel, .panel-card, .motion-trials { min-width: 0; }
+.ar-panel .row-between { flex-wrap: wrap; }
+.ar-panel .row-between > div { flex: 1 1 180px; min-width: 0; }
+
 .cart {
   position: absolute;
   left: 46px;

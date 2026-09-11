@@ -1,3 +1,4 @@
+import { legacyModules } from "../data/legacyModules.js";
 import { Router } from "express";
 import { z } from "zod";
 import { modules, toPersistedModule } from "../data/modules.js";
@@ -78,7 +79,7 @@ syncRouter.post("/", requireAuth, async (request, response, next) => {
     const { sub: userId, role } = request.user!;
 
     await Promise.all(
-      modules.map((module) => {
+      [...legacyModules, ...modules].map((module) => {
         const persisted = toPersistedModule(module);
         return prisma.module.upsert({
           where: { id: module.id },

@@ -11,6 +11,10 @@ export interface LearningModule {
   icon: string;
   title: string;
   subtitle: string;
+  groupId: string;
+  moduleNumber: number;
+  moduleTitle: string;
+  quarterNumber: number;
   quarter: string;
   time: string;
   task: string;

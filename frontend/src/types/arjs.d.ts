@@ -8,11 +8,13 @@ declare global {
   }
 
   interface ArToolkitContext {
+    dispose?: () => void;
     init(onReady?: () => void): void;
     update(element: HTMLElement): void;
     getProjectionMatrix(): THREE.Matrix4;
     arController?: {
       canvas?: HTMLCanvasElement;
+      dispose?: () => void;
     };
   }
 

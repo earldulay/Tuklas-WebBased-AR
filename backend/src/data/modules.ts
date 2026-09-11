@@ -1,72 +1,502 @@
-
+/* Canonical catalog used by the API and the offline frontend. IDs identify individual POE experiments. */
 export const modules = [
   {
-    id: "motion", icon: "motion", title: "Forces and Motion",
-    subtitle: "Investigate Newton's second law with a marker-anchored cart.", quarter: "Module 1", time: "15-20 min",
-    task: "Predict how changing force and mass affects the motion of a cart.",
-    predictions: [
-      { question: "What happens to acceleration when force increases but mass stays the same?", choices: ["Acceleration increases", "Acceleration decreases", "Acceleration stays the same"] },
-      { question: "What happens to acceleration when mass increases but force stays the same?", choices: ["Acceleration decreases", "Acceleration increases", "Acceleration stays the same"] },
-      { question: "Which cart will accelerate fastest?", choices: ["High force and low mass", "Low force and high mass", "Low force and low mass"] },
+    "id": "inertia",
+    "groupId": "motion",
+    "moduleNumber": 1,
+    "moduleTitle": "Newton's Laws and Motion",
+    "quarterNumber": 1,
+    "icon": "motion",
+    "title": "1.1 Inertia Challenge",
+    "subtitle": "Observe an object at rest or in motion, then apply an unbalanced force.",
+    "quarter": "Q1: Force, Motion, and Energy",
+    "time": "15-20 min",
+    "task": "Observe an object at rest or in motion, then apply an unbalanced force.",
+    "predictions": [
+      {
+        "question": "At zero net force, a resting cart will?",
+        "choices": [
+          "Remain at rest",
+          "Speed up",
+          "Move backward"
+        ]
+      },
+      {
+        "question": "At zero net force, a moving cart will?",
+        "choices": [
+          "Keep a constant velocity",
+          "Gradually stop",
+          "Accelerate"
+        ]
+      },
+      {
+        "question": "An unbalanced force changes?",
+        "choices": [
+          "Velocity",
+          "Mass",
+          "The law of inertia"
+        ]
+      }
     ],
-    observe: "Run trials with different force and mass values and compare the acceleration readout.",
-    overview: "A net force causes an object to accelerate. According to Newton's second law, acceleration increases when force increases and decreases when mass increases. The model represents this relationship as acceleration = force divided by mass.",
+    "observe": "Compare zero force with a push. Try both a stationary and a moving cart.",
+    "overview": "Without a net force, velocity remains constant. An unbalanced force changes velocity. The frictionless track wraps at its edge so motion stays visible."
   },
   {
-    id: "electricity", icon: "electricity", title: "Electric Circuits",
-    subtitle: "Build a simple series circuit and observe current changes.", quarter: "Module 2", time: "20-25 min",
-    task: "Predict how voltage and resistance affect current in a simple circuit.",
-    predictions: [
-      { question: "What happens to current when resistance increases at the same voltage?", choices: ["Current decreases", "Current increases", "Current stays the same"] },
-      { question: "What happens to current when voltage increases at the same resistance?", choices: ["Current increases", "Current decreases", "Current becomes zero"] },
-      { question: "When will the bulb glow brightest?", choices: ["High voltage and low resistance", "Low voltage and high resistance", "Low voltage and low resistance"] },
+    "id": "force-mass",
+    "groupId": "motion",
+    "moduleNumber": 1,
+    "moduleTitle": "Newton's Laws and Motion",
+    "quarterNumber": 1,
+    "icon": "motion",
+    "title": "1.2 Force, Mass, and Acceleration",
+    "subtitle": "Change force and mass on a virtual cart and compare acceleration.",
+    "quarter": "Q1: Force, Motion, and Energy",
+    "time": "15-20 min",
+    "task": "Change force and mass on a virtual cart and compare acceleration.",
+    "predictions": [
+      {
+        "question": "Doubling force at fixed mass makes acceleration?",
+        "choices": [
+          "Double",
+          "Halve",
+          "Stay the same"
+        ]
+      },
+      {
+        "question": "Doubling mass at fixed force makes acceleration?",
+        "choices": [
+          "Halve",
+          "Double",
+          "Stay the same"
+        ]
+      },
+      {
+        "question": "Which accelerates fastest?",
+        "choices": [
+          "High force, low mass",
+          "Low force, high mass",
+          "Zero force"
+        ]
+      }
     ],
-    observe: "Adjust voltage and resistance, then compare current and bulb brightness.",
-    overview: "Electric current depends on voltage and resistance. Higher voltage pushes more charge through the circuit, while greater resistance reduces the flow. The model follows Ohm's law: current = voltage divided by resistance.",
+    "observe": "Hold mass constant while changing force; then hold force constant while changing mass.",
+    "overview": "Newton's second law gives a = F/m. Doubling net force doubles acceleration; doubling mass halves acceleration at the same force."
   },
   {
-    id: "materials", icon: "materials", title: "Matter and Chemical Change",
-    subtitle: "Heat and cool particles to explore solids, liquids, and gases.", quarter: "Module 3", time: "15-20 min",
-    task: "Heat or cool a particle model and observe how matter changes state.",
-    predictions: [
-      { question: "What happens to particles when matter is heated?", choices: ["They move faster", "They stop moving", "They disappear"] },
-      { question: "How are particles arranged in a solid?", choices: ["Tightly packed and ordered", "Far apart and random", "Completely motionless"] },
-      { question: "Which state has particles that are farthest apart?", choices: ["Gas", "Liquid", "Solid"] },
+    "id": "launcher",
+    "groupId": "motion",
+    "moduleNumber": 1,
+    "moduleTitle": "Newton's Laws and Motion",
+    "quarterNumber": 1,
+    "icon": "motion",
+    "title": "1.3 Action-Reaction Launcher",
+    "subtitle": "Launch a balloon-powered cart and identify the force pair.",
+    "quarter": "Q1: Force, Motion, and Energy",
+    "time": "15-20 min",
+    "task": "Launch a balloon-powered cart and identify the force pair.",
+    "predictions": [
+      {
+        "question": "The reaction to air pushed backward is?",
+        "choices": [
+          "The cart pushed forward",
+          "The cart pushed backward",
+          "No force"
+        ]
+      },
+      {
+        "question": "Action and reaction act on?",
+        "choices": [
+          "Different objects",
+          "The same object",
+          "Neither object"
+        ]
+      },
+      {
+        "question": "A heavier cart at equal thrust has?",
+        "choices": [
+          "Less acceleration",
+          "More acceleration",
+          "No mass"
+        ]
+      }
     ],
-    observe: "Try solid, liquid, and gas temperatures, then compare particle arrangement and motion.",
-    overview: "Matter changes state as thermal energy changes. Solid particles remain closely packed and vibrate, liquid particles stay close but slide past one another, and gas particles move quickly with large spaces between them. The particles themselves do not disappear during a state change.",
+    "observe": "Change thrust and cart mass. Compare the arrows on the expelled air and the cart.",
+    "overview": "The cart pushes air backward and the air pushes the cart forward with equal forces. These forces act on different objects, so they do not cancel on the cart."
   },
   {
-    id: "life", icon: "life", title: "Life Science",
-    subtitle: "Inspect a plant cell and test the functions of its organelles.", quarter: "Module 4", time: "15-20 min",
-    task: "Remove or restore a cell organelle and observe which cell function is affected.",
-    predictions: [
-      { question: "Which organelle controls most cell activities?", choices: ["Nucleus", "Mitochondrion", "Chloroplast"] },
-      { question: "Which organelle captures light energy to make food?", choices: ["Chloroplast", "Cell membrane", "Nucleus"] },
-      { question: "What happens when an important organelle is removed?", choices: ["Its related function is impaired", "Every function improves", "Nothing can be affected"] },
+    "id": "series",
+    "groupId": "electricity",
+    "moduleNumber": 2,
+    "moduleTitle": "Electric Current and Circuits",
+    "quarterNumber": 1,
+    "icon": "electricity",
+    "title": "2.1 Series Circuit Investigation",
+    "subtitle": "Change batteries and bulbs to observe current and brightness.",
+    "quarter": "Q1: Force, Motion, and Energy",
+    "time": "15-20 min",
+    "task": "Change batteries and bulbs to observe current and brightness.",
+    "predictions": [
+      {
+        "question": "Adding series bulbs at fixed voltage makes each bulb?",
+        "choices": [
+          "Dimmer",
+          "Brighter",
+          "Unchanged"
+        ]
+      },
+      {
+        "question": "Adding batteries increases?",
+        "choices": [
+          "Current",
+          "Resistance of each bulb",
+          "Number of paths"
+        ]
+      },
+      {
+        "question": "Opening the switch makes?",
+        "choices": [
+          "All bulbs go out",
+          "One bulb brighten",
+          "Current increase"
+        ]
+      }
     ],
-    observe: "Remove each organelle one at a time, inspect the model, and record the affected function.",
-    overview: "Cell organelles have specialized jobs. The nucleus contains genetic information and directs activities, mitochondria release usable energy, chloroplasts perform photosynthesis, and the cell membrane controls what enters and leaves. Removing a part impairs the function it performs.",
+    "observe": "Compare one to three batteries and bulbs, then open the switch.",
+    "overview": "Identical bulbs in series share one current path. More bulbs increase total resistance. More batteries increase voltage. Opening the circuit stops current everywhere."
   },
   {
-    id: "earth-space", icon: "earth", title: "Earth and Space Systems",
-    subtitle: "Separate and inspect Earth's four main internal layers.", quarter: "Module 5", time: "20-25 min",
-    task: "Open an Earth model and identify the crust, mantle, outer core, and inner core.",
-    predictions: [
-      { question: "Which layer is at Earth's surface?", choices: ["Crust", "Mantle", "Inner core"] },
-      { question: "Which layer is made mainly of liquid iron and nickel?", choices: ["Outer core", "Inner core", "Crust"] },
-      { question: "Which sequence goes from outside to inside?", choices: ["Crust, mantle, outer core, inner core", "Mantle, crust, inner core, outer core", "Inner core, outer core, crust, mantle"] },
+    "id": "parallel",
+    "groupId": "electricity",
+    "moduleNumber": 2,
+    "moduleTitle": "Electric Current and Circuits",
+    "quarterNumber": 1,
+    "icon": "electricity",
+    "title": "2.2 Parallel Circuit Investigation",
+    "subtitle": "Remove a bulb and observe why other bulbs remain lit.",
+    "quarter": "Q1: Force, Motion, and Energy",
+    "time": "15-20 min",
+    "task": "Remove a bulb and observe why other bulbs remain lit.",
+    "predictions": [
+      {
+        "question": "Removing one parallel bulb leaves others?",
+        "choices": [
+          "Lit",
+          "All off",
+          "Short circuited"
+        ]
+      },
+      {
+        "question": "Each branch receives?",
+        "choices": [
+          "The supply voltage",
+          "Zero voltage",
+          "A share divided by bulb count"
+        ]
+      },
+      {
+        "question": "Adding a parallel branch increases?",
+        "choices": [
+          "Total current",
+          "Resistance of every bulb",
+          "Voltage of the battery"
+        ]
+      }
     ],
-    observe: "Separate the model, select each layer, and compare its position and composition.",
-    overview: "Earth has four main layers. The thin solid crust is outside, the hot mantle lies beneath it, the outer core is liquid iron and nickel, and the inner core is solid because of immense pressure. Temperature and pressure generally increase toward Earth's center.",
+    "observe": "Toggle individual bulb branches and compare remaining bulb brightness and total current.",
+    "overview": "Parallel branches each receive the supply voltage. Removing one branch stops its current while other closed branches stay lit. Total current is the sum of branch currents."
   },
+  {
+    "id": "home-circuit",
+    "groupId": "electricity",
+    "moduleNumber": 2,
+    "moduleTitle": "Electric Current and Circuits",
+    "quarterNumber": 1,
+    "icon": "electricity",
+    "title": "2.3 Home Circuit Designer",
+    "subtitle": "Build a low-voltage model and compare series and parallel wiring.",
+    "quarter": "Q1: Force, Motion, and Energy",
+    "time": "15-20 min",
+    "task": "Build a low-voltage model and compare series and parallel wiring.",
+    "predictions": [
+      {
+        "question": "Independent home lights use?",
+        "choices": [
+          "Parallel wiring",
+          "Only series wiring",
+          "No return path"
+        ]
+      },
+      {
+        "question": "A fuse protects by?",
+        "choices": [
+          "Opening on excessive current",
+          "Increasing current",
+          "Removing resistance"
+        ]
+      },
+      {
+        "question": "A complete working circuit needs?",
+        "choices": [
+          "A closed path through a load",
+          "Only a battery",
+          "An open switch"
+        ]
+      }
+    ],
+    "observe": "Select wiring, install bulbs, and close the switch. Compare what happens when a bulb is removed.",
+    "overview": "This is a low-voltage virtual model with a protective fuse. Parallel wiring allows independent lights. A fuse opens when total current exceeds its rating. Household mains are not used in this activity."
+  },
+  {
+    "id": "chemical-change",
+    "groupId": "materials",
+    "moduleNumber": 3,
+    "moduleTitle": "Chemical Bonding and Chemical Change",
+    "quarterNumber": 4,
+    "icon": "materials",
+    "title": "3.1 Simple Chemical Change Investigation",
+    "subtitle": "Combine virtual vinegar and baking soda and observe gas formation.",
+    "quarter": "Q4: Science of Materials",
+    "time": "15-20 min",
+    "task": "Combine virtual vinegar and baking soda and observe gas formation.",
+    "predictions": [
+      {
+        "question": "Mixing the ingredients produces?",
+        "choices": [
+          "Carbon dioxide gas",
+          "Only a temperature change",
+          "No new substances"
+        ]
+      },
+      {
+        "question": "Evidence of this reaction includes?",
+        "choices": [
+          "Bubbling gas",
+          "Only stirring",
+          "The container shape"
+        ]
+      },
+      {
+        "question": "With only one ingredient there is?",
+        "choices": [
+          "No acid-bicarbonate reaction",
+          "The same bubbling",
+          "More carbon dioxide"
+        ]
+      }
+    ],
+    "observe": "Add each ingredient. Compare one ingredient alone with both together.",
+    "overview": "Vinegar reacts with baking soda to form carbon dioxide gas, water, and sodium acetate. Bubbling in this reaction is evidence of a new substance. The displayed reaction amount is qualitative."
+  },
+  {
+    "id": "bonding",
+    "groupId": "materials",
+    "moduleNumber": 3,
+    "moduleTitle": "Chemical Bonding and Chemical Change",
+    "quarterNumber": 4,
+    "icon": "materials",
+    "title": "3.2 Basic Bonding Model",
+    "subtitle": "Transfer or share electrons to model sodium chloride and water.",
+    "quarter": "Q4: Science of Materials",
+    "time": "15-20 min",
+    "task": "Transfer or share electrons to model sodium chloride and water.",
+    "predictions": [
+      {
+        "question": "In NaCl an electron is?",
+        "choices": [
+          "Transferred from Na to Cl",
+          "Destroyed",
+          "Shared equally"
+        ]
+      },
+      {
+        "question": "Water contains?",
+        "choices": [
+          "Shared electron pairs",
+          "Only ionic bonds",
+          "No electrons"
+        ]
+      },
+      {
+        "question": "After losing an electron sodium becomes?",
+        "choices": [
+          "Positive",
+          "Negative",
+          "Uncharged"
+        ]
+      }
+    ],
+    "observe": "Drag an electron to chlorine for NaCl. For water, place shared pairs in both O-H bonds.",
+    "overview": "Sodium transfers one valence electron to chlorine, forming Na+ and Cl- ions. In water, oxygen shares one electron pair with each hydrogen. Oxygen also has two lone pairs."
+  },
+  {
+    "id": "seismic",
+    "groupId": "earth-space",
+    "moduleNumber": 4,
+    "moduleTitle": "Earth's Interior",
+    "quarterNumber": 2,
+    "icon": "earth",
+    "title": "4.1 Seismic-Wave Investigation",
+    "subtitle": "Compare P-waves and S-waves in solid and liquid layers.",
+    "quarter": "Q2: Earth and Space Science",
+    "time": "15-20 min",
+    "task": "Compare P-waves and S-waves in solid and liquid layers.",
+    "predictions": [
+      {
+        "question": "Which travels through a liquid?",
+        "choices": [
+          "P-wave",
+          "S-wave",
+          "Neither"
+        ]
+      },
+      {
+        "question": "S-wave motion is?",
+        "choices": [
+          "Transverse to travel",
+          "Always in the travel direction",
+          "Motionless in solids"
+        ]
+      },
+      {
+        "question": "An outer core that blocks S-waves is inferred to be?",
+        "choices": [
+          "Liquid",
+          "Empty",
+          "Solid crust"
+        ]
+      }
+    ],
+    "observe": "Switch wave type and material. Observe particle motion and whether the wave crosses the sample.",
+    "overview": "P-waves compress material and travel through solids and liquids. S-waves shear solids and cannot propagate through liquids. This evidence supports a liquid outer core. This sample model is not a map of global ray paths."
+  },
+  {
+    "id": "earth-scale",
+    "groupId": "earth-space",
+    "moduleNumber": 4,
+    "moduleTitle": "Earth's Interior",
+    "quarterNumber": 2,
+    "icon": "earth",
+    "title": "4.2 Build Earth's Interior to Scale",
+    "subtitle": "Assemble and label Earth's interior using relative depths and thicknesses.",
+    "quarter": "Q2: Earth and Space Science",
+    "time": "15-20 min",
+    "task": "Assemble and label Earth's interior using relative depths and thicknesses.",
+    "predictions": [
+      {
+        "question": "From the center outward, first comes?",
+        "choices": [
+          "Inner core",
+          "Crust",
+          "Lithosphere"
+        ]
+      },
+      {
+        "question": "The lithosphere includes?",
+        "choices": [
+          "Crust and uppermost mantle",
+          "Only the outer core",
+          "All of the mantle"
+        ]
+      },
+      {
+        "question": "The thickest compositional layer is?",
+        "choices": [
+          "Mantle",
+          "Crust",
+          "Inner core"
+        ]
+      }
+    ],
+    "observe": "Add the compositional layers from inside outward, then identify the overlapping lithosphere and asthenosphere.",
+    "overview": "The model uses a 6,371 km radius: inner core to 1,221 km radius, outer core to 3,480 km, mantle to a representative 35 km crust. Lithosphere (0-100 km depth) includes crust and uppermost mantle; asthenosphere (100-350 km here) lies within the mantle. These shallow boundaries vary by location and are overlays, not extra concentric compositional layers."
+  },
+  {
+    "id": "replication",
+    "groupId": "life",
+    "moduleNumber": 5,
+    "moduleTitle": "DNA and Mutation",
+    "quarterNumber": 3,
+    "icon": "life",
+    "title": "5.1 DNA Replication Model",
+    "subtitle": "Match complementary nucleotide bases to copy genetic information.",
+    "quarter": "Q3: Life Science",
+    "time": "15-20 min",
+    "task": "Match complementary nucleotide bases to copy genetic information.",
+    "predictions": [
+      {
+        "question": "A pairs with?",
+        "choices": [
+          "T",
+          "C",
+          "G"
+        ]
+      },
+      {
+        "question": "C pairs with?",
+        "choices": [
+          "G",
+          "A",
+          "T"
+        ]
+      },
+      {
+        "question": "Each daughter DNA molecule contains?",
+        "choices": [
+          "One old and one new strand",
+          "Only old strands",
+          "Only new strands"
+        ]
+      }
+    ],
+    "observe": "Separate the template strands, then match each exposed base. Complete both daughter DNA molecules.",
+    "overview": "A pairs with T and C pairs with G. Each daughter DNA molecule contains one original strand and one newly synthesized complementary strand: semiconservative replication."
+  },
+  {
+    "id": "mutation",
+    "groupId": "life",
+    "moduleNumber": 5,
+    "moduleTitle": "DNA and Mutation",
+    "quarterNumber": 3,
+    "icon": "life",
+    "title": "5.2 Mutation Effects Simulator",
+    "subtitle": "Introduce a substitution, insertion, or deletion into a DNA sequence.",
+    "quarter": "Q3: Life Science",
+    "time": "15-20 min",
+    "task": "Introduce a substitution, insertion, or deletion into a DNA sequence.",
+    "predictions": [
+      {
+        "question": "A substitution can?",
+        "choices": [
+          "Change one base",
+          "Always remove three bases",
+          "Always improve a trait"
+        ]
+      },
+      {
+        "question": "A one-base insertion in a coding sequence causes?",
+        "choices": [
+          "A frameshift",
+          "No possible change",
+          "Only an extra whole codon"
+        ]
+      },
+      {
+        "question": "A DNA mutation always causes disease.",
+        "choices": [
+          "False",
+          "True",
+          "Only in this model"
+        ]
+      }
+    ],
+    "observe": "Choose a mutation and position. Compare DNA codons and the translated protein with the original.",
+    "overview": "A substitution may leave a protein unchanged, change one amino acid, or introduce a stop. A one-base insertion or deletion shifts the reading frame in this coding sequence. A protein change does not by itself determine a trait or whether the effect is harmful."
+  }
 ];
 
-export function toPersistedModule(module: (typeof modules)[number]) {
-  const { predictions, overview: _overview, ...persisted } = module;
-  return {
-    ...persisted,
-    prediction: predictions[0].question,
-    choices: predictions[0].choices,
-  };
+export function toPersistedModule(module: { id: string; icon: string; title: string; subtitle: string; quarter: string; time: string; task: string; predictions: { question: string; choices: string[] }[]; observe: string }) {
+  // Whitelist database fields; curriculum grouping is served from the catalog.
+  return { id: module.id, icon: module.icon, title: module.title, subtitle: module.subtitle,
+    quarter: module.quarter, time: module.time, task: module.task, observe: module.observe,
+    prediction: module.predictions[0].question, choices: module.predictions[0].choices };
 }
