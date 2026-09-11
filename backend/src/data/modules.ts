@@ -247,95 +247,13 @@ export const modules = [
     "overview": "This is a low-voltage virtual model with a protective fuse. Parallel wiring allows independent lights. A fuse opens when total current exceeds its rating. Household mains are not used in this activity."
   },
   {
-    "id": "chemical-change",
-    "groupId": "materials",
-    "moduleNumber": 3,
-    "moduleTitle": "Chemical Bonding and Chemical Change",
-    "quarterNumber": 4,
-    "icon": "materials",
-    "title": "3.1 Simple Chemical Change Investigation",
-    "subtitle": "Combine virtual vinegar and baking soda and observe gas formation.",
-    "quarter": "Q4: Science of Materials",
-    "time": "15-20 min",
-    "task": "Combine virtual vinegar and baking soda and observe gas formation.",
-    "predictions": [
-      {
-        "question": "Mixing the ingredients produces?",
-        "choices": [
-          "Carbon dioxide gas",
-          "Only a temperature change",
-          "No new substances"
-        ]
-      },
-      {
-        "question": "Evidence of this reaction includes?",
-        "choices": [
-          "Bubbling gas",
-          "Only stirring",
-          "The container shape"
-        ]
-      },
-      {
-        "question": "With only one ingredient there is?",
-        "choices": [
-          "No acid-bicarbonate reaction",
-          "The same bubbling",
-          "More carbon dioxide"
-        ]
-      }
-    ],
-    "observe": "Add each ingredient. Compare one ingredient alone with both together.",
-    "overview": "Vinegar reacts with baking soda to form carbon dioxide gas, water, and sodium acetate. Bubbling in this reaction is evidence of a new substance. The displayed reaction amount is qualitative."
-  },
-  {
-    "id": "bonding",
-    "groupId": "materials",
-    "moduleNumber": 3,
-    "moduleTitle": "Chemical Bonding and Chemical Change",
-    "quarterNumber": 4,
-    "icon": "materials",
-    "title": "3.2 Basic Bonding Model",
-    "subtitle": "Transfer or share electrons to model sodium chloride and water.",
-    "quarter": "Q4: Science of Materials",
-    "time": "15-20 min",
-    "task": "Transfer or share electrons to model sodium chloride and water.",
-    "predictions": [
-      {
-        "question": "In NaCl an electron is?",
-        "choices": [
-          "Transferred from Na to Cl",
-          "Destroyed",
-          "Shared equally"
-        ]
-      },
-      {
-        "question": "Water contains?",
-        "choices": [
-          "Shared electron pairs",
-          "Only ionic bonds",
-          "No electrons"
-        ]
-      },
-      {
-        "question": "After losing an electron sodium becomes?",
-        "choices": [
-          "Positive",
-          "Negative",
-          "Uncharged"
-        ]
-      }
-    ],
-    "observe": "Drag an electron to chlorine for NaCl. For water, place shared pairs in both O-H bonds.",
-    "overview": "Sodium transfers one valence electron to chlorine, forming Na+ and Cl- ions. In water, oxygen shares one electron pair with each hydrogen. Oxygen also has two lone pairs."
-  },
-  {
     "id": "seismic",
     "groupId": "earth-space",
-    "moduleNumber": 4,
+    "moduleNumber": 3,
     "moduleTitle": "Earth's Interior",
     "quarterNumber": 2,
     "icon": "earth",
-    "title": "4.1 Seismic-Wave Investigation",
+    "title": "3.1 Seismic-Wave Investigation",
     "subtitle": "Compare P-waves and S-waves in solid and liquid layers.",
     "quarter": "Q2: Earth and Space Science",
     "time": "15-20 min",
@@ -372,11 +290,11 @@ export const modules = [
   {
     "id": "earth-scale",
     "groupId": "earth-space",
-    "moduleNumber": 4,
+    "moduleNumber": 3,
     "moduleTitle": "Earth's Interior",
     "quarterNumber": 2,
     "icon": "earth",
-    "title": "4.2 Build Earth's Interior to Scale",
+    "title": "3.2 Build Earth's Interior to Scale",
     "subtitle": "Assemble and label Earth's interior using relative depths and thicknesses.",
     "quarter": "Q2: Earth and Space Science",
     "time": "15-20 min",
@@ -413,11 +331,11 @@ export const modules = [
   {
     "id": "replication",
     "groupId": "life",
-    "moduleNumber": 5,
+    "moduleNumber": 4,
     "moduleTitle": "DNA and Mutation",
     "quarterNumber": 3,
     "icon": "life",
-    "title": "5.1 DNA Replication Model",
+    "title": "4.1 DNA Replication Model",
     "subtitle": "Match complementary nucleotide bases to copy genetic information.",
     "quarter": "Q3: Life Science",
     "time": "15-20 min",
@@ -454,11 +372,11 @@ export const modules = [
   {
     "id": "mutation",
     "groupId": "life",
-    "moduleNumber": 5,
+    "moduleNumber": 4,
     "moduleTitle": "DNA and Mutation",
     "quarterNumber": 3,
     "icon": "life",
-    "title": "5.2 Mutation Effects Simulator",
+    "title": "4.2 Mutation Effects Simulator",
     "subtitle": "Introduce a substitution, insertion, or deletion into a DNA sequence.",
     "quarter": "Q3: Life Science",
     "time": "15-20 min",
@@ -491,6 +409,88 @@ export const modules = [
     ],
     "observe": "Choose a mutation and position. Compare DNA codons and the translated protein with the original.",
     "overview": "A substitution may leave a protein unchanged, change one amino acid, or introduce a stop. A one-base insertion or deletion shifts the reading frame in this coding sequence. A protein change does not by itself determine a trait or whether the effect is harmful."
+  },
+  {
+    "id": "chemical-change",
+    "groupId": "materials",
+    "moduleNumber": 5,
+    "moduleTitle": "Chemical Bonding and Chemical Change",
+    "quarterNumber": 4,
+    "icon": "materials",
+    "title": "5.1 Simple Chemical Change Investigation",
+    "subtitle": "Combine virtual vinegar and baking soda and observe gas formation.",
+    "quarter": "Q4: Science of Materials",
+    "time": "15-20 min",
+    "task": "Combine virtual vinegar and baking soda and observe gas formation.",
+    "predictions": [
+      {
+        "question": "Mixing the ingredients produces?",
+        "choices": [
+          "Carbon dioxide gas",
+          "Only a temperature change",
+          "No new substances"
+        ]
+      },
+      {
+        "question": "Evidence of this reaction includes?",
+        "choices": [
+          "Bubbling gas",
+          "Only stirring",
+          "The container shape"
+        ]
+      },
+      {
+        "question": "With only one ingredient there is?",
+        "choices": [
+          "No acid-bicarbonate reaction",
+          "The same bubbling",
+          "More carbon dioxide"
+        ]
+      }
+    ],
+    "observe": "Add each ingredient. Compare one ingredient alone with both together.",
+    "overview": "Vinegar reacts with baking soda to form carbon dioxide gas, water, and sodium acetate. Bubbling in this reaction is evidence of a new substance. The displayed reaction amount is qualitative."
+  },
+  {
+    "id": "bonding",
+    "groupId": "materials",
+    "moduleNumber": 5,
+    "moduleTitle": "Chemical Bonding and Chemical Change",
+    "quarterNumber": 4,
+    "icon": "materials",
+    "title": "5.2 Basic Bonding Model",
+    "subtitle": "Transfer or share electrons to model sodium chloride and water.",
+    "quarter": "Q4: Science of Materials",
+    "time": "15-20 min",
+    "task": "Transfer or share electrons to model sodium chloride and water.",
+    "predictions": [
+      {
+        "question": "In NaCl an electron is?",
+        "choices": [
+          "Transferred from Na to Cl",
+          "Destroyed",
+          "Shared equally"
+        ]
+      },
+      {
+        "question": "Water contains?",
+        "choices": [
+          "Shared electron pairs",
+          "Only ionic bonds",
+          "No electrons"
+        ]
+      },
+      {
+        "question": "After losing an electron sodium becomes?",
+        "choices": [
+          "Positive",
+          "Negative",
+          "Uncharged"
+        ]
+      }
+    ],
+    "observe": "Drag an electron to chlorine for NaCl. For water, place shared pairs in both O-H bonds.",
+    "overview": "Sodium transfers one valence electron to chlorine, forming Na+ and Cl- ions. In water, oxygen shares one electron pair with each hydrogen. Oxygen also has two lone pairs."
   }
 ];
 
