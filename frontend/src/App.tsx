@@ -1,11 +1,12 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { ApiError, createSection, createSectionStudent, fetchClassProgress, fetchModules, fetchMyRecords, getSection, listSections, login as apiLogin, registerTeacher, resetStudentProgress, submitFeedback, syncRecords } from "./lib/api";
-import { clearSession, getStoredUser, setSession } from "./lib/auth";
-import { clearRecords, loadRecords, replaceRecords, saveRecord } from "./lib/storage";
+import { clearSession, getStoredUser, getToken, getSessionNotice, setSession, subscribeSession } from "./lib/auth";
+import { createRecordSession } from "./lib/record-session";
 import { prepareOfflineFiles } from "./lib/offline";
 import { modules as fallbackModules } from "./data/modules";
 import { getObservationModel, getObservationDefaults, formatControlValue, initialLabState } from "./lib/experiments";
 import { ExperimentControls } from "./components/ExperimentControls";
+import { AccountDetails } from "./components/AccountDetails";
 import type { ActivityRecord, AuthUser, ClassProgressRecord, Feedback, LearningModule, Role, Screen, Section, SectionSummary, Stage, ViewMode } from "./types/domain";
 import { Activity, CircuitBoard, Download, Earth, Microscope, Printer, Thermometer, type LucideIcon } from "lucide-react";
 
@@ -49,7 +50,14 @@ function ModuleIcon({ moduleId }: { moduleId: string }) {
 }
 
 function App() {
-  const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
+  const token = useSyncExternalStore(subscribeSession, getToken);
+  // Remount all account-owned state, forms, feedback and request effects.
+  return <Workspace key={token || "signed-out"} user={token ? getStoredUser() : null} />;
+}
+
+function Workspace({ user }: { user: AuthUser | null }) {
+  const recordSession = useRef<ReturnType<typeof createRecordSession> | null>(null);
+  const pendingSaves = useRef(new Set<string>());
   const role: Role | "" = user?.role ?? "";
   const isTeacherPreview = role === "teacher";
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
@@ -58,7 +66,7 @@ function App() {
   const [signupUsername, setSignupUsername] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
   const [signupName, setSignupName] = useState("");
-  const [authError, setAuthError] = useState("");
+  const [authError, setAuthError] = useState(getSessionNotice);
   const [authLoading, setAuthLoading] = useState(false);
   const [students, setStudents] = useState<AuthUser[]>([]);
   const [classRecords, setClassRecords] = useState<ClassProgressRecord[]>([]);
@@ -158,44 +166,35 @@ function App() {
     fetchModules().then(items => { if (items.length === fallbackModules.length && items.every(item => item.groupId && fallbackModules.some(local => local.id === item.id))) setModules(items); }).catch(() => undefined);
   }, []);
 
-  // Records are scoped to whichever account is logged in - reload (or
-  // clear) whenever the account changes, so switching users on a shared
-  // device never shows the previous student's progress.
   useEffect(() => {
-    if (!user) {
-      setRecords([]);
-      return;
-    }
-    loadRecords(user.id).then(setRecords);
-  }, [user]);
+    if (!user) return;
+    const token = getToken();
+    const session = createRecordSession({
+      userId: user.id,
+      isCurrent: () => getToken() === token,
+      upload: syncRecords,
+      fetch: fetchMyRecords,
+      onRecords: setRecords,
+      onFeedback: setMyFeedback,
+    });
+    recordSession.current = session;
+    session.load().catch(() => showToast("Could not load saved work. Check browser storage."));
+    return () => { session.stop(); recordSession.current = null; };
+  }, [user?.id]);
 
-  // Pulls this account's authoritative record set from the server and
-  // reconciles it with local storage - the mechanism that actually makes a
-  // teacher's progress reset take effect on the student's own device. Runs
-  // on reconnect/login and whenever the student revisits Home or Lessons,
-  // which is right before they'd hit a locked screen.
+  // Keep resets and feedback live on every activity screen. Pulls and
+  // uploads share a queue; saving locally never waits for the network.
   useEffect(() => {
     if (!online || !user) return;
-    if (screen !== "home" && screen !== "modules") return;
-
-    const reconcile = () => {
-      fetchMyRecords()
-        .then((result) => {
-          setRecords((current) => {
-            const unsyncedLocal = current.filter((record) => !record.syncedAt && !result.records.some((serverRecord) => serverRecord.id === record.id));
-            const merged = [...result.records, ...unsyncedLocal];
-            replaceRecords(user.id, merged);
-            return merged;
-          });
-          setMyFeedback(result.feedback);
-        })
-        .catch(() => undefined);
+    const session = recordSession.current;
+    const refresh = () => {
+      session?.reconcile().catch(() => undefined);
+      session?.sync().catch(() => undefined);
     };
-
-    reconcile();
-    const interval = window.setInterval(reconcile, LIVE_REFRESH_MS);
+    refresh();
+    const interval = window.setInterval(refresh, LIVE_REFRESH_MS);
     return () => window.clearInterval(interval);
-  }, [online, user, screen]);
+  }, [online, user?.id]);
 
   useEffect(() => {
     const handleOnline = () => setOnline(true);
@@ -208,18 +207,6 @@ function App() {
     };
   }, []);
 
-  // Auto-sync: catches records saved while offline (or in a previous
-  // session) as soon as the device is online and logged in, instead of
-  // relying on the student to remember the manual "Sync Saved Work"
-  // button in Settings. Each Predict/Observe/Explain submission also
-  // triggers an immediate sync of its own, below.
-  useEffect(() => {
-    if (online && user) {
-      syncUnsyncedRecords(records).catch(() => undefined);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [online, user, records]);
-
   useEffect(() => {
     localStorage.setItem("tuklas-view-mode", viewMode);
   }, [viewMode]);
@@ -227,9 +214,11 @@ function App() {
   useEffect(() => {
     if (!online || !(screen === "home" && role === "teacher")) return;
 
+    let cancelled = false;
     const load = () => {
       fetchClassProgress()
         .then((result) => {
+          if (cancelled) return;
           setStudents(result.students);
           setClassRecords(result.records);
         })
@@ -238,7 +227,7 @@ function App() {
 
     load();
     const interval = window.setInterval(load, LIVE_REFRESH_MS);
-    return () => window.clearInterval(interval);
+    return () => { cancelled = true; window.clearInterval(interval); };
   }, [online, screen, role]);
 
   useEffect(() => {
@@ -250,9 +239,11 @@ function App() {
   useEffect(() => {
     if (!online || !(screen === "section" && activeSectionId)) return;
 
+    let cancelled = false;
     const load = () => {
       getSection(activeSectionId)
         .then((result) => {
+          if (cancelled) return;
           setActiveSection(result.section);
           setSectionStudents(result.students);
           setSectionRecords(result.records);
@@ -263,7 +254,7 @@ function App() {
 
     load();
     const interval = window.setInterval(load, LIVE_REFRESH_MS);
-    return () => window.clearInterval(interval);
+    return () => { cancelled = true; window.clearInterval(interval); };
   }, [online, screen, activeSectionId]);
 
   useEffect(() => {
@@ -330,7 +321,6 @@ function App() {
     try {
       const result = await apiLogin(loginUsername.trim(), loginPassword);
       setSession(result.token, result.user);
-      setUser(result.user);
       setLoginPassword("");
       showToast(result.user.role === "teacher" ? "Teacher Mode opened." : "Student Mode opened.");
     } catch (error) {
@@ -347,7 +337,6 @@ function App() {
     try {
       const result = await registerTeacher(signupUsername.trim(), signupPassword, signupName.trim());
       setSession(result.token, result.user);
-      setUser(result.user);
       setSignupPassword("");
       showToast("Teacher account created.");
     } catch (error) {
@@ -474,13 +463,15 @@ function App() {
 
   function logout() {
     clearSession();
-    setUser(null);
     setScreen("home");
     setHistory([]);
   }
 
   async function addRecord(stage: Stage, text: string) {
-    if (!user) return records;
+    const session = recordSession.current;
+    const saveKey = `${activeModule.id}:${stage}`;
+    if (!user || !session || pendingSaves.current.has(saveKey)) return null;
+    pendingSaves.current.add(saveKey);
     const record: ActivityRecord = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       userId: user.id,
@@ -493,30 +484,20 @@ function App() {
       createdAt: new Date().toISOString(),
     };
 
-    const next = [...records, record];
-    setRecords(next);
-    await saveRecord(record);
-    return next;
+    try {
+      return await session.save(record);
+    } catch {
+      showToast("Could not save your work. Check browser storage and try again.");
+      return null;
+    } finally {
+      pendingSaves.current.delete(saveKey);
+    }
   }
 
-  // Pushes any unsynced records to the server. Takes the records array
-  // explicitly (rather than reading the `records` state) so a caller that
-  // just added a record can sync it immediately without waiting for a
-  // re-render. Fails silently - the records stay saved locally either way
-  // and a later sync attempt (manual, reconnect, or next submission) will
-  // pick them up.
   async function syncUnsyncedRecords(currentRecords: ActivityRecord[]) {
     if (!navigator.onLine || !user) return currentRecords;
-    const unsynced = currentRecords.filter((record) => !record.syncedAt);
-    if (!unsynced.length) return currentRecords;
-
     try {
-      const result = await syncRecords(unsynced);
-      const syncedIds = new Set(result.records.map((record) => record.id));
-      const next = currentRecords.map((record) => (syncedIds.has(record.id) ? { ...record, syncedAt: new Date().toISOString() } : record));
-      setRecords(next);
-      await replaceRecords(user.id, next);
-      return next;
+      return await recordSession.current?.sync() || currentRecords;
     } catch {
       return currentRecords;
     }
@@ -662,6 +643,7 @@ function App() {
           <button className="status-button">{online ? "Online" : "Offline"}</button>
           <button className="logout-button" onClick={logout}>Logout</button>
         </div>
+        <AccountDetails user={user} />
       </header>
 
       <main className="screen-stack">
@@ -816,6 +798,7 @@ function App() {
                   const text = `${answers}${predictionNote.trim() ? `\n\nReasoning: ${predictionNote.trim()}` : ""}`;
                   if (!isTeacherPreview) {
                     const next = await addRecord("Predict", text);
+                    if (!next) return;
                     await syncUnsyncedRecords(next);
                   }
                   setTrialPulse(0);
@@ -874,6 +857,7 @@ function App() {
                 setExperimentTrials((current) => [...current, getExperimentTrial()]);
                 if (!isTeacherPreview && !observeLocked) {
                   const next = await addRecord("Observe", `Mode: ${viewMode}; ${observationModel.recordText}`);
+                  if (!next) return;
                   await syncUnsyncedRecords(next);
                 }
               }}>Run Trial</button>
@@ -902,6 +886,7 @@ function App() {
                   if (!evidence.trim() || !explanation.trim()) return showToast("Add evidence and a scientific explanation.");
                   if (!isTeacherPreview) {
                     const next = await addRecord("Explain", `Evidence: ${evidence.trim()} / Explanation: ${explanation.trim()}`);
+                    if (!next) return;
                     await syncUnsyncedRecords(next);
                   }
                   goTo("result");
@@ -933,6 +918,7 @@ function App() {
                 if (!reflection.trim()) return showToast("Write a reflection before saving.");
                 if (!isTeacherPreview) {
                   const next = await addRecord("Reflection", reflection.trim());
+                  if (!next) return;
                   await syncUnsyncedRecords(next);
                 }
                 setReflection("");
@@ -950,7 +936,7 @@ function App() {
             <article className="panel-card offline-checklist"><p className="eyebrow">Offline Setup</p><ol><li>Open this HTTPS app while connected.</li><li>Tap Prepare for Offline Use.</li><li>Add the app to the home screen.</li><li>Reopen in airplane mode and run one trial.</li></ol></article>
             {!isTeacherPreview && (
               <article className="panel-card teacher-tools">
-                <div className="row-between"><h2>Saved Work</h2><button className="text-button compact-button" onClick={async () => { if (!user) return; await clearRecords(user.id); setRecords([]); showToast("Saved progress cleared."); }}>Clear</button></div>
+                <div className="row-between"><h2>Saved Work</h2><button className="text-button compact-button" onClick={async () => { if (!user) return; await recordSession.current?.clear(); showToast("Saved progress cleared."); }}>Clear</button></div>
                 <div className="records-list">
                   {records.length ? records.slice().reverse().map((record) => <article className="record-card" key={record.id}><small>{record.role} / {record.module} / {record.stage} / {new Date(record.createdAt).toLocaleString()} {record.syncedAt ? "/ synced" : "/ offline"}</small><p>{record.text}</p></article>) : <p className="muted">No saved progress on this device yet.</p>}
                 </div>

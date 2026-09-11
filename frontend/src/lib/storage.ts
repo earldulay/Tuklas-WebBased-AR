@@ -1,83 +1,98 @@
 import type { ActivityRecord } from "../types/domain";
 
 const DB_NAME = "tuklas-poe";
-const DB_VERSION = 1;
 const RECORD_STORE = "records";
-const RECORDS_KEY = "tuklas-records";
-
+const LEGACY_KEY = "tuklas-records";
+const RECORD_PREFIX = "tuklas-record:";
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 
 function openDb(): Promise<IDBDatabase | null> {
   if (!("indexedDB" in window)) return Promise.resolve(null);
-  if (dbPromise) return dbPromise;
-
-  dbPromise = new Promise((resolve) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
+  if (!dbPromise) dbPromise = new Promise(resolve => {
+    const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = () => {
-      const database = request.result;
-      if (!database.objectStoreNames.contains(RECORD_STORE)) {
-        database.createObjectStore(RECORD_STORE, { keyPath: "id" });
+      if (!request.result.objectStoreNames.contains(RECORD_STORE)) {
+        request.result.createObjectStore(RECORD_STORE, { keyPath: "id" });
       }
     };
-
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => resolve(null);
   });
-
   return dbPromise;
 }
 
-// The device-local store holds records for every account that has ever
-// logged in on this device (useful on a shared classroom tablet, where the
-// same browser sees several students). Every read/write below is scoped to
-// a single userId so one account's progress can never leak into another's.
-
-async function loadAllRecords(): Promise<ActivityRecord[]> {
-  const fallback = JSON.parse(localStorage.getItem(RECORDS_KEY) || "[]") as ActivityRecord[];
-  const db = await openDb();
-  if (!db) return fallback;
-
-  return new Promise((resolve) => {
-    const request = db.transaction(RECORD_STORE, "readonly").objectStore(RECORD_STORE).getAll();
-    request.onsuccess = () => resolve((request.result || fallback) as ActivityRecord[]);
-    request.onerror = () => resolve(fallback);
-  });
+function fallbackRecords(): ActivityRecord[] {
+  // Migrate the old array once. Separate keys preserve concurrent additions.
+  const legacy = JSON.parse(localStorage.getItem(LEGACY_KEY) || "[]") as ActivityRecord[];
+  for (const record of legacy) {
+    const key = RECORD_PREFIX + record.id;
+    if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(record));
+  }
+  localStorage.removeItem(LEGACY_KEY);
+  const records: ActivityRecord[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith(RECORD_PREFIX)) {
+      const raw = localStorage.getItem(key);
+      if (raw) records.push(JSON.parse(raw) as ActivityRecord);
+    }
+  }
+  return records;
 }
 
-async function writeAllRecords(records: ActivityRecord[]) {
-  localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
-  const db = await openDb();
-  if (!db) return;
+type Change = (current: ActivityRecord[]) => ActivityRecord[];
 
-  await new Promise<void>((resolve) => {
-    const transaction = db.transaction(RECORD_STORE, "readwrite");
+// Read and mutate in ONE IndexedDB transaction, including across tabs.
+// Never clear the object store or persist a stale global snapshot.
+export async function updateRecords(userId: string, change?: Change): Promise<ActivityRecord[]> {
+  const db = await openDb();
+  if (!db) {
+    const apply = () => {
+      const current = fallbackRecords().filter(record => record.userId === userId);
+      if (!change) return current;
+      const next = change(current).filter(record => record.userId === userId);
+      for (const record of next) localStorage.setItem(RECORD_PREFIX + record.id, JSON.stringify(record));
+      for (const record of current) {
+        if (!next.some(item => item.id === record.id)) localStorage.removeItem(RECORD_PREFIX + record.id);
+      }
+      return next;
+    };
+    return navigator.locks ? navigator.locks.request(DB_NAME, apply) : apply();
+  }
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(RECORD_STORE, change ? "readwrite" : "readonly");
     const store = transaction.objectStore(RECORD_STORE);
-    store.clear();
-    records.forEach((record) => store.put(record));
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => resolve();
+    const request = store.getAll();
+    let next: ActivityRecord[] = [];
+    request.onsuccess = () => {
+      try {
+        const current = (request.result as ActivityRecord[]).filter(record => record.userId === userId);
+        next = change ? change(current).filter(record => record.userId === userId) : current;
+        if (change) {
+          for (const record of current) {
+            if (!next.some(item => item.id === record.id)) store.delete(record.id);
+          }
+          for (const record of next) store.put(record);
+        }
+      } catch (error) {
+        transaction.abort();
+        reject(error);
+      }
+    };
+    transaction.oncomplete = () => resolve(next);
+    transaction.onabort = () => reject(transaction.error || new Error("Saving records failed."));
+    transaction.onerror = () => reject(transaction.error || new Error("Reading records failed."));
   });
 }
 
-export async function loadRecords(userId: string): Promise<ActivityRecord[]> {
-  const all = await loadAllRecords();
-  return all.filter((record) => record.userId === userId);
+export function loadRecords(userId: string) {
+  return updateRecords(userId);
 }
 
-export async function saveRecord(record: ActivityRecord) {
-  const all = await loadAllRecords();
-  const next = [...all.filter((item) => item.id !== record.id), record];
-  await writeAllRecords(next);
+export function saveRecord(record: ActivityRecord) {
+  return updateRecords(record.userId, current => [...current.filter(item => item.id !== record.id), record]);
 }
 
-export async function replaceRecords(userId: string, records: ActivityRecord[]) {
-  const all = await loadAllRecords();
-  const others = all.filter((item) => item.userId !== userId);
-  await writeAllRecords([...others, ...records]);
-}
-
-export async function clearRecords(userId: string) {
-  const all = await loadAllRecords();
-  await writeAllRecords(all.filter((item) => item.userId !== userId));
+export function clearRecords(userId: string) {
+  return updateRecords(userId, () => []);
 }

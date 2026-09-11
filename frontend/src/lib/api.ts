@@ -1,7 +1,7 @@
 import { clearSession, getToken } from "./auth";
 import type { ActivityRecord, AuthUser, ClassProgressRecord, Feedback, LearningModule, Section, SectionSummary } from "../types/domain";
 
-const API_URL = import.meta.env.VITE_API_URL || "/api";
+const API_URL = import.meta.env?.VITE_API_URL || "/api";
 
 export class ApiError extends Error {
   status: number;
@@ -14,21 +14,25 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const response = await fetch(`${API_URL}${path}`, {
+    ...init,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
-    ...init,
   });
 
+  // A response from an old session must not log out or populate a new one.
+  if (token !== getToken()) throw new ApiError(409, "Session changed. Please try again.");
   if (!response.ok) {
-    if (response.status === 401) clearSession();
+    if (response.status === 401 && token) clearSession(true);
     const body = await response.json().catch(() => null);
     throw new ApiError(response.status, body?.error || `API request failed: ${response.status}`);
   }
 
-  return response.json() as Promise<T>;
+  const body = await response.json() as T;
+  if (token !== getToken()) throw new ApiError(409, "Session changed. Please try again.");
+  return body;
 }
 
 export function fetchModules() {

@@ -133,7 +133,11 @@ Notes:
 ```bash
 npm run typecheck
 npm run build
+npm run test:experiments
+npm run test:sync
 ```
+
+The sync regression checks record ownership and batch rollback with a mocked database, concurrent fallback saves, delayed uploads, reconciliation, account changes, and session expiration. The browser regression additionally checks real IndexedDB concurrency, resets while an activity is open, and session changes without losing saved work.
 
 With a dedicated Chrome test profile running on remote debugging port 9222, run the offline browser regression in PowerShell:
 

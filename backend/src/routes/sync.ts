@@ -1,6 +1,7 @@
 import { legacyModules } from "../data/legacyModules.js";
 import { Router } from "express";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { modules, toPersistedModule } from "../data/modules.js";
 import { requireAuth } from "../lib/auth.js";
 import { hasDatabaseUrl } from "../lib/database.js";
@@ -26,7 +27,7 @@ export const syncRouter = Router();
 // history on a device that never had it locally.
 syncRouter.get("/mine", requireAuth, async (request, response, next) => {
   if (!hasDatabaseUrl()) {
-    response.json({ records: [] });
+    response.status(503).json({ error: "DATABASE_URL is required before loading records." });
     return;
   }
 
@@ -89,12 +90,13 @@ syncRouter.post("/", requireAuth, async (request, response, next) => {
       }),
     );
 
-    const records = await Promise.all(
+    const records = await prisma.$transaction(
       payload.records.map((record) =>
         prisma.activityRecord.upsert({
-          where: { id: record.id },
+          // A colliding ID owned by somebody else must fail the unique
+          // constraint on create, never update or transfer their submission.
+          where: { id: record.id, userId },
           update: {
-            userId,
             role,
             moduleId: record.moduleId,
             mode: record.mode,
@@ -118,6 +120,10 @@ syncRouter.post("/", requireAuth, async (request, response, next) => {
 
     response.json({ records });
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      response.status(409).json({ error: "Record ID conflict. No records were synced." });
+      return;
+    }
     next(error);
   }
 });

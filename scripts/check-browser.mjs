@@ -3,6 +3,7 @@
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import assert from 'node:assert/strict';
+import { build } from 'esbuild';
 import { modules } from '../backend/src/data/modules.ts';
 const offline = process.env.TEST_OFFLINE === '1';
 const origin = offline ? 'http://127.0.0.1:5186' : process.env.TEST_ORIGIN || 'http://localhost:5174';
@@ -47,7 +48,7 @@ localStorage.setItem('tuklas-token', 'test-only'); localStorage.setItem('tuklas-
 const realFetch = window.fetch.bind(window);
 ${offline ? `Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => sessionStorage.testOffline !== '1' });` : ''}
 window.__records = [];
-window.fetch = (input, init) => { const url = typeof input === 'string' ? input : input.url; if (url.includes('/api/')) { if (url.endsWith('/sync') && init?.body) { const incoming = JSON.parse(init.body).records; for (const record of incoming) if (!window.__records.some(r => r.id === record.id)) window.__records.push({...record, syncedAt: new Date().toISOString()}); } return Promise.resolve(new Response(JSON.stringify(url.endsWith('/modules') ? ${JSON.stringify(modules)} : { records: window.__records, feedback: [], sections: [], students: [] }), { status: 200 })); } return realFetch(input, init); };
+window.fetch = (input, init) => { const url = typeof input === 'string' ? input : input.url; if (url.includes('/api/')) { if (url.endsWith('/sync') && init?.body) { const incoming = JSON.parse(init.body).records; for (const record of incoming) if (!window.__records.some(r => r.id === record.id)) window.__records.push({...record, syncedAt: new Date().toISOString()}); } return Promise.resolve(new Response(JSON.stringify(url.endsWith('/modules') ? ${JSON.stringify(modules)} : { records: window.__records, feedback: window.__feedback || [], sections: [], students: [] }), { status: 200 })); } return realFetch(input, init); };
 window.__markerVisible = true;
 ${offline ? `const mockFetch = window.fetch; window.fetch = (input, init) => { const url = typeof input === 'string' ? input : input.url; return !navigator.onLine && url.includes('/api/') ? Promise.reject(new TypeError('Offline API unavailable')) : mockFetch(input, init); };` : ''}
 navigator.mediaDevices.getUserMedia = async () => {
@@ -162,13 +163,21 @@ await evaluate(`document.querySelectorAll('fieldset input[type=radio]:first-of-t
 await click('Next');
 await waitFor(`document.querySelector('.three-scene canvas') !== null`);
 await click('Run Trial'); await click('Run Trial');
-const studentRecords = offline ? `JSON.parse(localStorage.getItem('tuklas-records') || '[]').filter(r => r.userId === JSON.parse(localStorage.getItem('tuklas-user')).id)` : 'window.__records';
-await waitFor(`${studentRecords}.filter(r => r.moduleId === 'inertia' && r.stage === 'Observe').length === 1`);
+const recordCheck = expression => `(async () => {
+  const db = await new Promise((resolve, reject) => { const request = indexedDB.open('tuklas-poe', 1); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+  try {
+    const all = await new Promise((resolve, reject) => { const request = db.transaction('records').objectStore('records').getAll(); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+    const savedRecords = all.filter(r => r.userId === (JSON.parse(localStorage.getItem('tuklas-user'))?.id || window.__lastUserId)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return ${expression};
+  } finally { db.close(); }
+})()`;
+const studentRecords = 'savedRecords';
+await waitFor(recordCheck(`${studentRecords}.filter(r => r.moduleId === 'inertia' && r.stage === 'Observe').length === 1`));
 await click('Continue');
 await evaluate(`document.querySelectorAll('textarea:not([readonly])').forEach(input => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, 'At zero net force, the stationary cart remained at rest.'); input.dispatchEvent(new Event('input', { bubbles: true })); })`);
 await click('Submit');
 await waitFor(`document.body.innerText.includes('Great work!')`);
-assert.deepEqual(await evaluate(`${studentRecords}.map(r => r.stage)`), ['Predict', 'Observe', 'Explain']);
+assert.deepEqual(await evaluate(recordCheck(`${studentRecords}.map(r => r.stage)`)), ['Predict', 'Observe', 'Explain']);
 await click('Modules'); await card(modules[1].quarter); await card(modules[1].moduleTitle); await card(modules[1].title);
 assert.equal(await evaluate(`document.querySelectorAll('.prediction-question').length`), 3);
 assert.equal(await evaluate(`document.querySelectorAll('input[type=radio]:checked').length`), 0);
@@ -182,7 +191,7 @@ if (offline) {
   await waitFor(`document.body.innerText.includes('Progress Summary')`);
   await click('Settings');
   await waitFor(`document.querySelectorAll('.record-card').length === 3`);
-  assert.equal(await evaluate(`${studentRecords}.every(r => !r.syncedAt)`), true);
+  assert.equal(await evaluate(recordCheck(`${studentRecords}.every(r => !r.syncedAt)`)), true);
   assert.equal(await evaluate('window.__records.length'), 0, 'No offline uploads');
   await evaluate(`window.__export = null; const create = URL.createObjectURL.bind(URL); URL.createObjectURL = blob => { window.__export = blob.text(); return create(blob); };`);
   await click('Export JSON');
@@ -194,7 +203,7 @@ if (offline) {
   await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
   await send('Network.overrideNetworkState', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
   await evaluate(`sessionStorage.removeItem('testOffline'); window.dispatchEvent(new Event('online'));`);
-  await waitFor(`${studentRecords}.every(r => !!r.syncedAt) && window.__records.length === 3`);
+  await waitFor(recordCheck(`${studentRecords}.every(r => !!r.syncedAt) && window.__records.length === 3`));
   console.log('PASS reconnect uploads all three queued stages (mock API).');
   await evaluate(`(async () => { for (const name of await caches.keys()) { if (name.startsWith('tuklas-webar-')) await (await caches.open(name)).delete('/assets/tuklas-marker.patt'); } })()`);
   await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.includes('Prepare for Offline Use')).click()`);
@@ -202,6 +211,80 @@ if (offline) {
   assert.equal(await evaluate(`document.body.innerText.includes('Ready: 12 experiments cached')`), false);
   assert.deepEqual(errors, []);
   console.log('PASS missing offline file reports preparation failure instead of Ready.');
+}
+if (offline) {
+  // Exercise real IndexedDB transactions in two same-origin JS contexts.
+  const storageBundle = await build({ stdin: { contents: "export * from './frontend/src/lib/storage.ts'", resolveDir: process.cwd(), loader: 'ts' }, bundle: true, write: false, format: 'iife', globalName: 'AuditStorage' });
+  const storageCode = storageBundle.outputFiles[0].text;
+  await evaluate(storageCode + '; true');
+  const storageResult = await evaluate(`(async () => {
+    const frame = document.createElement('iframe'); document.body.append(frame);
+    frame.contentWindow.eval(${JSON.stringify(storageCode)});
+    const make = (id, userId) => ({ id, userId, role: 'student', module: 'Inertia', moduleId: 'inertia', mode: 'fallback', stage: 'Predict', text: id, createdAt: new Date().toISOString() });
+    try {
+      await Promise.all(Array.from({ length: 30 }, (_, index) => (index % 2 ? frame.contentWindow.AuditStorage : AuditStorage).saveRecord(make('concurrent-' + index, index < 20 ? 'storage-a' : 'storage-b'))));
+      const counts = [(await AuditStorage.loadRecords('storage-a')).length, (await AuditStorage.loadRecords('storage-b')).length];
+      await AuditStorage.clearRecords('storage-a');
+      counts.push((await AuditStorage.loadRecords('storage-b')).length);
+      await AuditStorage.clearRecords('storage-b');
+      return counts;
+    } finally { frame.remove(); }
+  })()`);
+  assert.deepEqual(storageResult, [20, 10, 10]);
+  console.log('PASS concurrent IndexedDB saves across contexts and account-scoped deletion.');
+
+  await evaluate(`window.__feedback = [{ id: 'grade', moduleId: 'inertia', score: 90, comment: 'Private student A feedback' }];`);
+  await click('Modules'); await card(modules[0].quarter); await card(modules[0].moduleTitle); await card(modules[0].title);
+  await waitFor(`!!document.querySelector('.locked-notice') && document.body.innerText.includes('Private student A feedback')`);
+  await evaluate(`window.__previousRecords = window.__records; window.__records = []; window.__feedback = [];`);
+  await waitFor(`!!document.querySelector('.prediction-question') && !!!document.querySelector('.locked-notice')`);
+  assert.equal(await evaluate(recordCheck('savedRecords.length')), 0);
+  assert.equal(await evaluate(`document.body.innerText.includes('Private student A feedback')`), false);
+  console.log('PASS teacher reset unlocks an open activity and clears feedback without navigation.');
+  await evaluate(`window.__originalPut = IDBObjectStore.prototype.put; IDBObjectStore.prototype.put = function() { throw new DOMException('Test quota limit', 'QuotaExceededError'); }; document.querySelectorAll('fieldset input[type=radio]:first-of-type').forEach(input => { if (!document.querySelector('input[name="'+input.name+'"]:checked')) input.click(); });`);
+  await click('Next');
+  await waitFor(`document.body.innerText.includes('Could not save your work')`);
+  assert.equal(await evaluate(`!!document.querySelector('.prediction-question') && document.querySelectorAll('input[type=radio]:checked').length > 0`), true);
+  assert.equal(await evaluate(recordCheck('savedRecords.length')), 0);
+  await evaluate('IDBObjectStore.prototype.put = window.__originalPut');
+  console.log('PASS failed local save keeps answers on screen and does not advance progress.');
+
+
+  await evaluate(`(() => {
+    const previousFetch = window.fetch;
+    window.__holdMine = true;
+    window.fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url.endsWith('/sync/mine') && window.__expireSession) return Promise.resolve(new Response('{}', { status: 401 }));
+      if (url.endsWith('/sync/mine') && window.__holdMine) {
+        window.__heldMine = true;
+        return new Promise(resolve => { window.__releaseMine = () => resolve(new Response(JSON.stringify({ records: window.__previousRecords, feedback: [{ id: 'stale-grade', moduleId: 'inertia', comment: 'Private student A feedback' }] }), { status: 200 })); });
+      }
+      return previousFetch(input, init);
+    };
+  })()`);
+  await waitFor('window.__heldMine === true');
+  await click('Logout');
+  await waitFor(`!!document.querySelector('.auth-form')`);
+  await evaluate(`localStorage.setItem('tuklas-user', JSON.stringify({ id: 'account-b', username: 'b', name: 'Student B', role: 'student', sectionId: null })); localStorage.setItem('tuklas-token', 'account-b-token'); localStorage.setItem('tuklas-view-mode', 'fallback'); window.__holdMine = false; window.dispatchEvent(new Event('storage'));`);
+  await waitFor(`document.body.innerText.includes('Progress Summary')`);
+  await evaluate('window.__releaseMine()');
+  await sleep(200);
+  await click('Modules'); await card(modules[0].quarter); await card(modules[0].moduleTitle); await card(modules[0].title);
+  assert.equal(await evaluate(`!!document.querySelector('.prediction-question')`), true);
+  assert.equal(await evaluate(`document.body.innerText.includes('Private student A feedback')`), false);
+  assert.equal(await evaluate(recordCheck('savedRecords.length')), 0);
+  console.log('PASS account switch rejects delayed records and feedback from the old account.');
+
+  await evaluate(`document.querySelectorAll('fieldset input[type=radio]:first-of-type').forEach(input => { if (!document.querySelector('input[name="'+input.name+'"]:checked')) input.click(); })`);
+  await click('Next');
+  await waitFor(recordCheck('savedRecords.length === 1'));
+  await evaluate(`window.__lastUserId = 'account-b'; window.__expireSession = true;`);
+  await waitFor(`!!document.querySelector('.auth-form') && document.body.innerText.includes('Your session expired')`);
+  assert.equal(await evaluate(`localStorage.getItem('tuklas-token')`), null);
+  assert.equal(await evaluate(recordCheck('savedRecords.length')), 1);
+  assert.deepEqual(errors, []);
+  console.log('PASS expired session opens login immediately and preserves locally saved work.');
 }
 await evaluate(`sessionStorage.removeItem('testRole')`);
 socket.close();

@@ -8,6 +8,7 @@
     "backend"
   ],
   "scripts": {
+    "test:sync": "tsx scripts/test-sync.mjs",
     "test:experiments": "tsx scripts/test-experiments.mjs",
     "test:browser": "tsx scripts/check-browser.mjs",
     "dev": "npm run dev --workspace frontend",
