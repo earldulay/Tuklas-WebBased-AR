@@ -18,7 +18,8 @@ export function createApp() {
     .filter(Boolean);
   // Vercel preview deployments of the frontend get a new URL on every push:
   // <project>-<9-char hash>-tuklasar.vercel.app or <project>-git-<branch>-tuklasar.vercel.app.
-  const previewOrigin = /^https:\/\/tuklas-web-based-ar-frontend-(?:[a-z0-9]{9}|git-[a-z0-9-]+)-tuklasar\.vercel\.app$/;
+  const previewOrigin =
+  /^https:\/\/tuklas-web-based-ar-frontend-(?:[a-z0-9]{9}|git-[a-z0-9-]+)-(?:tuklasar|earl-stephens-projects)\.vercel\.app$/;
 
   app.use(helmet());
   app.use(
