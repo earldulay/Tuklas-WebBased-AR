@@ -1,3 +1,17 @@
+/* Self-hosted so it precaches with the rest of the app shell - no network request at runtime.
+   Subsetted to the Latin letters/digits/punctuation this app actually renders, so it's ~20KB,
+   not the 100KB+ a full Google Fonts weight normally costs. Lexend only: a reading-proficiency
+   typeface, actually designed for this audience rather than picked for looks. Used sparingly -
+   see "one bold display font, used in one place" below, not on every heading. */
+@font-face {
+  font-family: "Lexend";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("/fonts/lexend-800.woff2") format("woff2");
+  unicode-range: U+25, U+27, U+2C-39, U+41-5A, U+61-7A;
+}
+
 :root {
   color-scheme: light;
   --blue: #0f4c9a;
@@ -9,8 +23,18 @@
   --line: #ccd8ea;
   --surface: #f5f8fd;
   --panel: #ffffff;
-  --shadow: 0 12px 28px rgba(15, 76, 154, 0.12);
+  /* A quieter resting shadow so the one elevated "hero" surface per screen (see .overall-progress)
+     actually reads as heavier than everything around it, instead of every card shouting equally.
+     Strong enough on its own to read as an edge against --surface without a visible border line -
+     on a washed-out budget-phone screen in daylight, a shadow this faint plus zero border would
+     make cards disappear, so this is deliberately not as faint as a desktop-only app could get
+     away with. */
+  --shadow: 0 8px 20px rgba(15, 76, 154, 0.1);
   --camera: #27344d;
+  /* A softer, friendlier corner radius for cards, buttons and other main surfaces.
+     Small functional chips (badges, dots, pills) keep their own tighter radius. */
+  --radius: 14px;
+  --font-display: "Lexend", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 * {
@@ -76,8 +100,11 @@ p {
 
 h1 {
   margin-bottom: 0;
+  font-family: var(--font-display);
   font-size: 1.25rem;
+  font-weight: 800;
   line-height: 1.1;
+  letter-spacing: -0.01em;
 }
 
 h2 {
@@ -119,17 +146,108 @@ small {
 .landing-marker {
   width: min(420px, 100%);
   margin: 0 auto;
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .landing-hero {
+  position: relative;
   align-self: end;
-  padding: 28px 22px;
+  padding: 36px 26px;
   border: 1px solid rgba(255, 255, 255, 0.42);
   color: #fff;
   text-align: left;
   background: rgba(7, 31, 68, 0.9);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+}
+
+/* AR-viewfinder corner brackets: the one thing this app's UI never actually said "this is a
+   camera/AR tool" with. Reused on .ar-frame (the real camera view) so the same visual language
+   that introduces the app on login is the language the app actually uses once you're in it,
+   instead of two unrelated design systems. Four real elements, not a border trick, so they stay
+   crisp at any corner radius. */
+.scan-corner {
+  position: absolute;
+  z-index: 5;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+}
+
+.scan-corner.tl { top: 10px; left: 10px; border-top: 3px solid var(--gold); border-left: 3px solid var(--gold); border-radius: 6px 0 0 0; }
+.scan-corner.tr { top: 10px; right: 10px; border-top: 3px solid var(--gold); border-right: 3px solid var(--gold); border-radius: 0 6px 0 0; }
+.scan-corner.bl { bottom: 10px; left: 10px; border-bottom: 3px solid var(--gold); border-left: 3px solid var(--gold); border-radius: 0 0 0 6px; }
+.scan-corner.br { bottom: 10px; right: 10px; border-bottom: 3px solid var(--gold); border-right: 3px solid var(--gold); border-radius: 0 0 6px 0; }
+
+/* "Capture confirmed" - the completion celebration for finishing a module's three
+   stages, built from the same viewfinder-bracket language as .scan-corner instead of a
+   generic confetti burst. Plays once, the moment a module crosses into "done" this
+   session (App.tsx tracks this - never replays for modules that were already complete
+   when the page loaded), like a camera achieving focus-lock, then disappears for good -
+   a felt moment rather than a badge left glowing on every completed row forever. */
+.row-capture-lock {
+  position: relative;
+  animation: capture-lock-glow 1300ms ease;
+}
+
+.row-lock-corner {
+  position: absolute;
+  z-index: 5;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  opacity: 0;
+  animation: capture-lock-corner 1300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.row-lock-corner.tl { top: 4px; left: 4px; border-top: 2px solid var(--gold); border-left: 2px solid var(--gold); border-radius: 4px 0 0 0; }
+.row-lock-corner.tr { top: 4px; right: 4px; border-top: 2px solid var(--gold); border-right: 2px solid var(--gold); border-radius: 0 4px 0 0; animation-delay: 40ms; }
+.row-lock-corner.bl { bottom: 4px; left: 4px; border-bottom: 2px solid var(--gold); border-left: 2px solid var(--gold); border-radius: 0 0 0 4px; animation-delay: 40ms; }
+.row-lock-corner.br { bottom: 4px; right: 4px; border-bottom: 2px solid var(--gold); border-right: 2px solid var(--gold); border-radius: 0 0 4px 0; animation-delay: 80ms; }
+
+@keyframes capture-lock-corner {
+  0% { opacity: 0; transform: scale(2.2); }
+  22% { opacity: 1; transform: scale(1); }
+  78% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+@keyframes capture-lock-glow {
+  0% { background: transparent; }
+  30% { background: rgba(247, 198, 0, 0.12); }
+  100% { background: transparent; }
+}
+
+/* A small permanent upgrade (pill shape instead of bare colored text) plus a one-time
+   gold flash into its resting blue when a grade has just arrived this session. */
+.graded-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--blue) !important;
+  background: #eaf2ff;
+}
+
+.graded-badge-new {
+  animation: graded-pop 700ms ease;
+}
+
+@keyframes graded-pop {
+  0% { background: rgba(247, 198, 0, 0.5); transform: scale(1.08); }
+  100% { background: #eaf2ff; transform: scale(1); }
+}
+
+.hero-scan-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 10px;
+  border: 1.5px solid rgba(247, 198, 0, 0.5);
+  border-radius: 50%;
+  color: var(--gold);
+  background: rgba(247, 198, 0, 0.1);
 }
 
 .landing-hero p {
@@ -145,17 +263,52 @@ small {
 .landing-flow {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: 10px;
+  padding: 4px 0;
 }
 
+/* Non-interactive steps, deliberately not styled like buttons: no border/fill box,
+   just a numbered badge over a label, connected by a line so it reads as a flow. */
 .landing-flow article {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 6px 4px 0;
+  color: rgba(255, 255, 255, 0.92);
+  text-align: center;
+}
+
+.landing-flow article:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 15px;
+  left: calc(50% + 24px);
+  width: calc(100% - 34px);
+  height: 2px;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.landing-flow-step {
   display: grid;
   place-items: center;
-  min-height: 58px;
-  border: 1px solid rgba(255, 255, 255, 0.38);
-  border-radius: 8px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.12);
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 0.85rem;
+  font-weight: 900;
+}
+
+.landing-flow article strong {
+  font-size: 0.85rem;
+}
+
+.landing-flow article small {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.68rem;
+  line-height: 1.25;
 }
 
 .landing-marker {
@@ -177,15 +330,47 @@ small {
 .text-button {
   width: 100%;
   min-height: 46px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
   font-weight: 800;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
 
 .primary-button {
+  position: relative;
+  overflow: hidden;
   border: 0;
   color: #fff;
-  background: var(--blue);
+  background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%);
+  box-shadow: 0 10px 22px rgba(15, 76, 154, 0.32);
+}
+
+/* A camera-shutter flash on press instead of a generic bounce - every primary action in
+   Tuklas reads as "capturing" something, consistent with the AR/viewfinder identity rather
+   than a borrowed game-reward feel. Pure CSS: flashes instantly on press, fades on release,
+   so even a quick tap still shows it. */
+.primary-button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.55);
+  opacity: 0;
+  transition: opacity 450ms ease;
+  pointer-events: none;
+}
+
+.primary-button:active::after {
+  opacity: 1;
+  transition: opacity 0ms;
+}
+
+/* Icon + label buttons (Download, Print Slips): space the icon from the text. */
+.primary-button:has(> svg),
+.secondary-button:has(> svg) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .secondary-button,
@@ -193,6 +378,32 @@ small {
   border: 1px solid var(--blue);
   color: var(--blue);
   background: #fff;
+}
+
+/* A light press-down on every clickable surface, skipped for touch-only devices
+   since a lingering :active state on tap feels sticky rather than tactile there. */
+@media (hover: hover) and (pointer: fine) {
+  .primary-button:not(:disabled):hover {
+    box-shadow: 0 12px 26px rgba(15, 76, 154, 0.4);
+  }
+
+  .module-card:hover,
+  .settings-row:hover,
+  .task-card:hover,
+  .account-indicator:hover {
+    box-shadow: 0 14px 30px rgba(15, 76, 154, 0.16);
+    transform: translateY(-1px);
+  }
+}
+
+.primary-button:not(:disabled):active,
+.secondary-button:not(:disabled):active,
+.text-button:not(:disabled):active,
+.module-card:active,
+.settings-row:active,
+.task-card:active,
+.compact-button:not(:disabled):active {
+  transform: scale(0.98);
 }
 
 .compact-button {
@@ -232,7 +443,7 @@ small {
   min-height: 48px;
   padding: 8px 10px;
   border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: #fff;
   background: rgba(255, 255, 255, 0.1);
   text-align: left;
@@ -323,7 +534,7 @@ small {
   width: 44px;
   height: 44px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--ink);
   background: var(--surface);
   cursor: pointer;
@@ -364,8 +575,12 @@ small {
 }
 
 .back-button {
+  display: grid;
+  place-items: center;
   visibility: hidden;
-  font-size: 1.6rem;
+  width: 38px;
+  height: 38px;
+  padding: 0;
 }
 
 .back-button.visible {
@@ -386,18 +601,50 @@ small {
 .screen-stack {
   width: min(760px, 100%);
   margin: 0 auto;
-  padding: 12px;
+  padding: 14px;
 }
 
 .screen {
   display: none;
-  gap: 12px;
+  gap: 16px;
 }
 
+/* Screens are mounted one at a time (see App.tsx), so this plays on every navigation:
+   a short fade/rise-in makes switching screens feel considered instead of an instant swap. */
 .screen.active {
   display: grid;
+  animation: screen-enter 220ms ease both;
 }
 
+@keyframes screen-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen.active {
+    animation: none;
+  }
+
+  .row-capture-lock {
+    animation: none;
+  }
+
+  .row-lock-corner {
+    display: none;
+  }
+
+  .graded-badge-new {
+    animation: none;
+    background: rgba(247, 198, 0, 0.3);
+  }
+}
+
+/* Edges are drawn with shadow alone, not a visible 1px border - a bordered card reads as an
+   older "boxed form" style; letting the shadow do the edge work is the more current look
+   (Linear/Notion/Stripe-era cards) and it's one fewer hard line fighting the soft shadow. */
 .panel-card,
 .hero-card,
 .task-card,
@@ -406,17 +653,18 @@ small {
 .ar-panel,
 .result-card,
 .record-card {
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 1px solid rgba(15, 76, 154, 0.05);
+  border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--shadow);
+  transition: transform 120ms ease, box-shadow 120ms ease;
 }
 
 .hero-card,
 .panel-card,
 .ar-panel,
 .result-card {
-  padding: 14px;
+  padding: 16px;
 }
 
 .hero-card {
@@ -436,10 +684,22 @@ small {
   width: 44px;
   height: 44px;
   border: 1px solid rgba(15, 76, 154, 0.22);
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--blue);
   background: #eaf2ff;
 }
+
+/* One accent per MATATAG subject strand, so a student can tell Physics from Chemistry at a
+   glance across Home, the module list, and search results, instead of every icon badge being
+   the same blue regardless of subject. Chosen to extend the brand palette, not fight it: Physics
+   keeps the house blue since it's the default/most frequent strand, Materials reuses the brand
+   red (chemistry/reaction association), the other three are new but kept in the same muted,
+   slightly desaturated family as navy/red/gold rather than picked as a bright rainbow set. */
+.subject-motion { border-color: rgba(15, 76, 154, 0.22); color: var(--blue); background: #eaf2ff; }
+.subject-electricity { border-color: rgba(14, 143, 138, 0.28); color: #0e8f8a; background: #e4f6f5; }
+.subject-earth-space { border-color: rgba(181, 103, 26, 0.3); color: #b5671a; background: #fbeee0; }
+.subject-life { border-color: rgba(43, 138, 78, 0.28); color: #2b8a4e; background: #e6f6ec; }
+.subject-materials { border-color: rgba(215, 25, 32, 0.24); color: var(--red); background: #fdecec; }
 
 .marker-panel {
   display: grid;
@@ -448,25 +708,19 @@ small {
   align-items: center;
 }
 
+/* Shows the real printable marker (the flask), so the preview matches what students print. */
 .marker-preview {
-  display: grid;
-  place-items: center;
+  display: block;
   aspect-ratio: 1;
-  border: 14px solid #111;
-  color: #111;
-  text-decoration: none;
-  background:
-    linear-gradient(90deg, #111 0 18%, transparent 18% 82%, #111 82%),
-    linear-gradient(#111 0 18%, transparent 18% 82%, #111 82%),
-    #fff;
-  font-size: 0.78rem;
-  font-weight: 900;
+  background: #fff;
+  border-radius: 6px;
+  overflow: hidden;
 }
 
-.marker-preview span {
-  padding: 4px 6px;
-  border: 2px solid currentColor;
-  background: #fff;
+.marker-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .row-between {
@@ -488,18 +742,32 @@ small {
   width: 0%;
   height: 100%;
   border-radius: inherit;
-  background: var(--blue);
+  background: linear-gradient(90deg, var(--blue) 0%, #2f7fd8 100%);
   transition: width 180ms ease;
 }
 
+/* The one card on Home that gets more visual weight than everything around it -
+   a heavier shadow and a gold top edge, the same treatment every other card deliberately
+   does not get, so the eye lands here first instead of every surface competing equally. */
 .overall-progress {
   display: grid;
   gap: 10px;
+  border-top: 5px solid var(--gold);
+  box-shadow: 0 18px 40px rgba(15, 76, 154, 0.22);
 }
 
 .overall-percent {
   color: var(--blue);
   font-size: 1.7rem;
+}
+
+/* Only the Home hero stat gets the display typeface and the larger, bolder treatment -
+   the same number reused for a feedback score elsewhere stays at the quieter default. */
+.overall-progress .overall-percent {
+  font-family: var(--font-display);
+  font-size: 2.3rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 .overall-track {
@@ -513,6 +781,7 @@ small {
 }
 
 .module-progress-row {
+  position: relative;
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
   gap: 10px;
@@ -550,10 +819,6 @@ button.module-progress-row {
   font: inherit;
   text-align: left;
   cursor: pointer;
-}
-
-.graded-badge {
-  color: var(--blue) !important;
 }
 
 .marker-access,
@@ -595,6 +860,7 @@ button.module-progress-row {
   color: inherit;
   text-align: left;
   cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
 }
 
 .task-card,
@@ -604,6 +870,13 @@ button.module-progress-row {
 
 .module-card {
   grid-template-columns: 44px minmax(0, 1fr) auto auto;
+}
+
+.row-chevron {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--muted);
 }
 
 .task-card {
@@ -626,15 +899,26 @@ button.module-progress-row {
 }
 
 .search-box input,
-textarea {
+textarea,
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="email"],
+input[type="search"] {
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--ink);
   background: #fff;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
-.search-box input {
+.search-box input,
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="email"],
+input[type="search"] {
   min-height: 44px;
   padding: 0 12px;
 }
@@ -642,6 +926,17 @@ textarea {
 textarea {
   padding: 12px;
   resize: vertical;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="email"]:focus,
+input[type="search"]:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(15, 76, 154, 0.14);
 }
 
 .module-list {
@@ -660,7 +955,7 @@ textarea {
   place-items: center;
   min-height: 52px;
   border: 1px dashed var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--muted);
   font-weight: 900;
 }
@@ -691,7 +986,7 @@ textarea {
   min-height: 42px;
   padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: #fbfdff;
 }
 
@@ -706,8 +1001,8 @@ input[type="range"] {
   aspect-ratio: 4 / 3;
   min-height: 0;
   overflow: hidden;
-  border: 2px solid var(--line);
-  border-radius: 8px;
+  border: 1px solid rgba(15, 76, 154, 0.1);
+  border-radius: var(--radius);
   background:
     linear-gradient(transparent 31px, rgba(255, 255, 255, 0.13) 32px),
     linear-gradient(90deg, transparent 31px, rgba(255, 255, 255, 0.13) 32px),
@@ -726,7 +1021,7 @@ input[type="range"] {
   margin: 0;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .prediction-question legend {
@@ -762,6 +1057,37 @@ input[type="range"] {
 
 .look-back {
   border-left: 5px solid var(--gold);
+}
+
+.lesson-card section + section {
+  margin-top: 12px;
+}
+
+.lesson-card h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  color: var(--blue-dark);
+}
+
+.lesson-card p,
+.lesson-card ul {
+  margin: 0 0 6px;
+}
+
+.lesson-card ul {
+  padding-left: 20px;
+}
+
+.lesson-competency {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.lesson-competency p {
+  margin: 4px 0 0;
 }
 
 .camera-video {
@@ -821,15 +1147,19 @@ input[type="range"] {
   pointer-events: none;
 }
 
-.curriculum-breadcrumb { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
-.curriculum-breadcrumb button { border: 0; background: transparent; color: var(--blue); padding: 8px 0; text-decoration: underline; }
+.curriculum-breadcrumb { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 16px; color: var(--muted); }
+.curriculum-breadcrumb button { border: 0; background: transparent; padding: 6px 2px; color: var(--muted); font-weight: 700; cursor: pointer; }
+.curriculum-breadcrumb button:hover { color: var(--blue); }
+.curriculum-breadcrumb .current,
+.curriculum-breadcrumb button.current { color: var(--ink); font-weight: 800; cursor: default; }
+.curriculum-breadcrumb svg { flex-shrink: 0; color: var(--line); }
 .module-card > span { min-width: 0; }
 .module-card strong, .module-card small { overflow-wrap: anywhere; }
 .bond-workbench, .dna-workbench, .earth-workbench { margin: 16px 0; }
-.bond-workbench button, .earth-workbench button { min-height: 44px; padding: 10px 14px; margin: 4px; border: 1px solid var(--line); border-radius: 8px; background: #edf5fc; color: var(--ink); }
+.bond-workbench button, .earth-workbench button { min-height: 44px; padding: 10px 14px; margin: 4px; border: 1px solid var(--line); border-radius: var(--radius); background: #edf5fc; color: var(--ink); }
 .bond-workbench .electron-token { background: #ffe9a4; touch-action: none; cursor: grab; }
 .bond-workbench [data-electron-target] { border: 2px dashed var(--blue); }
-.dna-workbench fieldset { margin: 12px 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.dna-workbench fieldset { margin: 12px 0; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius); }
 .base-choice { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; width: 100px; margin: 8px; }
 .base-choice select { min-height: 44px; padding: 6px; }
 .base-choice small { flex-basis: 100%; }
@@ -844,6 +1174,37 @@ input[type="range"] {
 .screen, .screen > *, .ar-panel, .panel-card, .motion-trials { min-width: 0; }
 .ar-panel .row-between { flex-wrap: wrap; }
 .ar-panel .row-between > div { flex: 1 1 180px; min-width: 0; }
+
+/* Keeps the camera view (and whether it's still looking for the marker) on screen while a
+   student scrolls down to read the prompt, adjust sliders, or hit Run Trial - all of which sit
+   below this in the same card. --header-h is measured in JS (see the ResizeObserver effect in
+   App.tsx) rather than a guessed constant, since the header's own height changes when a longer
+   module title wraps to two lines.
+   Capped at 420px wide (not just 100%) so this doesn't balloon into a huge pinned block on a
+   tablet-width screen, where .screen-stack is up to 760px and a 4:3 frame at that width would
+   eat most of the viewport every time it's stuck. */
+.ar-frame-sticky {
+  position: sticky;
+  top: calc(var(--header-h, 140px) + 10px);
+  z-index: 10;
+  /* width:100% is required here, not just max-width: .screen.active is a CSS grid, and a grid
+     item with margin-inline:auto but no explicit width gets Grid's "auto-margin alignment"
+     treatment instead of a normal block's stretch-then-cap - it shrinks to its own content's
+     max-content size (observed ~238px, nowhere near the 420px cap) instead of filling the
+     column and centering within it. The shrink was worse in 3D mode specifically, since that
+     mode renders one less child (no .camera-status line, only shown for viewMode "ar"), so the
+     content driving the shrink-wrap was even smaller - the frame and its canvas collapsed to a
+     few px and the 3D model effectively disappeared. Verified by measuring getBoundingClientRect
+     before/after adding width:100% in both modes. */
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 10px;
+  border: 1px solid rgba(15, 76, 154, 0.05);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
 
 .cart {
   position: absolute;
@@ -983,7 +1344,7 @@ input[type="range"] {
   min-height: 64px;
   padding: 10px;
   border: 2px solid #172033;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.9);
   font-weight: 900;
   text-align: center;
@@ -1072,7 +1433,7 @@ input[type="range"] {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--blue);
+  background: linear-gradient(90deg, var(--blue) 0%, var(--blue-dark) 100%);
 }
 
 .space-visual {
@@ -1150,7 +1511,7 @@ input[type="range"] {
 .tool-grid button {
   min-height: 54px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--blue);
   font-weight: 800;
   background: #fff;
@@ -1194,14 +1555,14 @@ input[type="range"] {
 
 .experiment-presets button.active {
   color: #fff;
-  border-color: var(--blue);
-  background: var(--blue);
+  border: 0;
+  background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%);
 }
 
 .data-readout span {
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   text-align: center;
   background: #f8fbff;
 }
@@ -1275,14 +1636,25 @@ input[type="range"] {
 }
 
 .bottom-nav button {
-  display: block;
+  display: grid;
+  place-items: center;
+  gap: 3px;
   min-height: 54px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--muted);
   background: transparent;
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 800;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.bottom-nav button svg {
+  transition: transform 150ms ease;
+}
+
+.bottom-nav button.active svg {
+  transform: translateY(-1px) scale(1.05);
 }
 
 .motion-trials {
@@ -1306,7 +1678,7 @@ input[type="range"] {
   min-height: 34px;
   padding: 8px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 8px;
   background: #f8fbff;
   font-size: 0.78rem;
   font-weight: 800;
@@ -1315,8 +1687,8 @@ input[type="range"] {
 
 .motion-trial-header span {
   color: #fff;
-  border-color: var(--blue);
-  background: var(--blue);
+  border: 0;
+  background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%);
 }
 
 .bottom-nav button.active {
@@ -1333,7 +1705,7 @@ input[type="range"] {
   max-width: 520px;
   margin: 0 auto;
   padding: 12px 14px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: #fff;
   text-align: center;
   background: var(--blue-dark);
@@ -1365,7 +1737,113 @@ input[type="range"] {
   }
 
   .app-header {
-    border-radius: 0 0 8px 8px;
+    border-radius: 0 0 var(--radius) var(--radius);
+  }
+}
+
+/* Laptop / projector (panel demo): wider column, larger text, bigger AR viewport.
+   Phone-first layout is unchanged; every font-size is rem, so the root bump scales all text. */
+@media (min-width: 1200px) and (min-height: 700px) {
+  html {
+    font-size: 17px;
+  }
+
+  .ar-frame-sticky {
+    max-width: 620px;
+  }
+}
+
+/* Desktop: the phone's bottom tab bar becomes a left sidebar and the column widens, so a
+   computer screen is not a phone strip with empty space on both sides. `screen` keeps it off
+   printed slips. */
+@media screen and (min-width: 1024px) {
+  body:not(.login-open) {
+    padding-bottom: 0;
+    padding-left: 200px;
+  }
+
+  .bottom-nav {
+    top: 0;
+    right: auto;
+    left: 0;
+    width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 24px 12px;
+    border-top: 0;
+    border-right: 1px solid var(--line);
+  }
+
+  .bottom-nav button {
+    display: flex;
+    justify-content: flex-start;
+    gap: 12px;
+    min-height: 48px;
+    padding: 0 14px;
+    font-size: 0.92rem;
+    cursor: pointer;
+  }
+
+  .screen-stack {
+    width: min(1120px, 100%);
+    padding: 24px 32px;
+  }
+
+  /* Login: intro on the left, form on the right. */
+  .landing-screen {
+    grid-template-columns: repeat(2, minmax(0, 460px));
+    grid-template-areas:
+      "hero auth"
+      "flow auth"
+      "marker auth"
+      "info info";
+    justify-content: center;
+    align-content: center;
+    column-gap: 40px;
+    row-gap: 18px;
+  }
+
+  .landing-hero { grid-area: hero; }
+  .landing-flow { grid-area: flow; }
+  .landing-marker { grid-area: marker; }
+
+  .landing-hero,
+  .landing-flow,
+  .landing-marker,
+  .auth-card {
+    width: 100%;
+    align-self: start;
+  }
+
+  .auth-card {
+    grid-area: auth;
+    padding: 28px;
+  }
+
+  .landing-screen .app-info {
+    grid-area: info;
+    margin-top: 12px;
+  }
+  /* Observe: camera on the left, prompt/controls/trials on the right, so the pinned camera
+     never covers the answers. The sticky frame stays pinned while its grid row (as tall as
+     the right column) scrolls past. */
+  .observe-screen {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    align-items: start;
+  }
+
+  .observe-screen > * {
+    grid-column: 1 / -1;
+  }
+
+  .observe-screen > .ar-frame-sticky {
+    grid-column: 1;
+    max-width: none;
+  }
+
+  .observe-screen > .ar-frame-sticky + .panel-card {
+    grid-column: 2;
   }
 }
 
@@ -1451,7 +1929,7 @@ input[type="range"] {
 .auth-tabs button {
   min-height: 40px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--muted);
   cursor: pointer;
   background: #fff;
@@ -1461,7 +1939,8 @@ input[type="range"] {
 .auth-tabs button.active {
   color: #fff;
   border-color: var(--blue);
-  background: var(--blue);
+  background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%);
+  box-shadow: 0 8px 18px rgba(15, 76, 154, 0.28);
 }
 
 .auth-form {
@@ -1488,14 +1967,22 @@ input[type="range"] {
 }
 
 .teacher-preview-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
   margin: 0 0 12px;
   padding: 10px 12px;
   border: 1px solid rgba(15, 76, 154, 0.28);
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--blue);
   font-size: 0.8rem;
   font-weight: 700;
   background: #eaf2ff;
+}
+
+.teacher-preview-note svg {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
 .locked-notice {
@@ -1578,4 +2065,209 @@ input[type="range"] {
   font-size: 0.78rem;
   font-weight: 800;
   background: #eaf2ff;
+}
+
+/* Printable login slips (Classes > section > Add Whole Class / New Password).
+   Rendered as a sibling of #root and only shown while printSlips() has set body.printing-slips,
+   so a normal Ctrl+P elsewhere still prints the app. */
+.slip-sheet {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  body.printing-slips {
+    min-height: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  body.printing-slips #root {
+    display: none;
+  }
+
+  body.printing-slips .slip-sheet {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    color: #000;
+    font-family: system-ui, sans-serif;
+  }
+}
+
+.slip {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px dashed #888;
+  break-inside: avoid;
+  font-size: 11pt;
+}
+
+.slip strong {
+  font-size: 13pt;
+}
+
+.slip b {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13pt;
+  letter-spacing: 0.04em;
+}
+
+.slip small {
+  color: #444;
+  font-size: 8.5pt;
+}
+
+.slip-row {
+  flex-wrap: wrap;
+}
+
+.slip-row p {
+  margin: 0;
+}
+
+.slip-share {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.slip-share a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+/* Settings > Saved Work: one native <details> per module, collapsed by default. */
+.saved-all > summary,
+.saved-module summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.saved-all > summary::-webkit-details-marker,
+.saved-module summary::-webkit-details-marker {
+  display: none;
+}
+
+.saved-all > summary {
+  padding: 10px 0;
+}
+
+.saved-all[open] > summary {
+  margin-bottom: 8px;
+}
+
+.saved-all[open] > summary .disclosure-chevron,
+.saved-module[open] .disclosure-chevron {
+  transform: rotate(90deg);
+}
+
+.saved-module.record-card {
+  padding: 8px 10px;
+}
+
+.saved-module summary {
+  gap: 8px;
+}
+
+.saved-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-status {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.saved-complete {
+  color: #1d7a46;
+  font-weight: 800;
+}
+
+.saved-entry {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.saved-entry p {
+  margin: 4px 0 0;
+}
+
+/* About / FAQ / Privacy / Terms: native <details>, collapsed by default. */
+.app-info {
+  display: grid;
+  gap: 10px;
+}
+
+.info-section > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.info-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.info-section[open] > summary .disclosure-chevron {
+  transform: rotate(90deg);
+}
+
+.info-body {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+  line-height: 1.5;
+}
+
+.info-body p,
+.info-body ul {
+  margin: 0;
+}
+
+.info-body ul {
+  padding-left: 20px;
+}
+
+.info-faq p {
+  margin: 2px 0 0;
+}
+
+.change-password {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.change-password > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--blue);
+  padding: 6px 0;
+}
+
+.change-password form {
+  margin-top: 8px;
+}
+
+.getting-started ol {
+  margin: 4px 0 12px;
+  padding-left: 22px;
+  display: grid;
+  gap: 8px;
+}
+
+.getting-started li p {
+  margin: 2px 0 0;
 }

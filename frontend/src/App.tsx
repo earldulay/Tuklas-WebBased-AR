@@ -1,14 +1,19 @@
+import { createPortal } from "react-dom";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
-import { ApiError, createSection, createSectionStudent, fetchClassProgress, fetchModules, fetchMyRecords, getSection, listSections, login as apiLogin, registerTeacher, resetStudentProgress, submitFeedback, syncRecords } from "./lib/api";
+import { ApiError, createSection, createSectionStudent, fetchClassProgress, fetchModules, fetchMyRecords, getSection, listSections, login as apiLogin, registerTeacher, resetStudentProgress, setStudentPassword as apiSetStudentPassword, submitFeedback, syncRecords } from "./lib/api";
 import { clearSession, getStoredUser, getToken, getSessionNotice, setSession, subscribeSession } from "./lib/auth";
+import { makePassword, makeUsername, parseClassList } from "./lib/credentials";
 import { createRecordSession } from "./lib/record-session";
 import { prepareOfflineFiles } from "./lib/offline";
 import { modules as fallbackModules } from "./data/modules";
+import { lessons } from "./data/lessons";
 import { getObservationModel, getObservationDefaults, formatControlValue, initialLabState } from "./lib/experiments";
 import { ExperimentControls } from "./components/ExperimentControls";
 import { AccountDetails } from "./components/AccountDetails";
 import type { ActivityRecord, AuthUser, ClassProgressRecord, Feedback, LearningModule, Role, Screen, Section, SectionSummary, Stage, ViewMode } from "./types/domain";
-import { Activity, CircuitBoard, Download, Earth, Microscope, Printer, Thermometer, type LucideIcon } from "lucide-react";
+import AppInfo, { GettingStarted } from "./components/AppInfo";
+import { clearCache, readCache, writeCache } from "./lib/cache";
+import { Activity, BookOpen, ChevronLeft, ChevronRight, CircuitBoard, Download, KeyRound, Mail, MessageSquare, Earth, Eye, Home, Microscope, Printer, ScanLine, Settings, Thermometer, Users, type LucideIcon } from "lucide-react";
 
 // three.js (pulled in by ScienceScene) is a heavy dependency that only the
 // Observe screen and its fallback 3D preview need - lazy-loading it keeps
@@ -51,10 +56,49 @@ const moduleIcons: Record<string, LucideIcon> = {
   "earth-space": Earth,
 };
 
-function ModuleIcon({ moduleId }: { moduleId: string }) {
-  const Icon = moduleIcons[fallbackModules.find(item => item.id === moduleId)?.groupId || moduleId] || Activity;
-  return <span className="module-icon" aria-hidden="true"><Icon size={24} strokeWidth={2.2} /></span>;
+// Post-activity lesson (after Explain, never before Predict). Consecutive "- " lines become one list.
+function LessonCard({ module }: { module: LearningModule }) {
+  const lesson = lessons[module.id];
+  if (!lesson) return <article className="panel-card look-back"><p className="eyebrow">Look Back</p><h2>{module.title}</h2><p>{module.overview}</p></article>;
+  return (
+    <article className="panel-card look-back lesson-card">
+      <p className="eyebrow">Lesson</p>
+      <h2>{module.title}</h2>
+      {lesson.sections.map((section) => {
+        const blocks: (string | string[])[] = [];
+        for (const line of section.text) {
+          const item = line.startsWith("- ") ? line.slice(2) : null;
+          const last = blocks[blocks.length - 1];
+          if (item === null) blocks.push(line);
+          else if (Array.isArray(last)) last.push(item);
+          else blocks.push([item]);
+        }
+        return (
+          <section key={section.title}>
+            <h3>{section.title}</h3>
+            {blocks.map((block, index) => Array.isArray(block)
+              ? <ul key={index}>{block.map((item) => <li key={item}>{item}</li>)}</ul>
+              : <p key={index}>{block}</p>)}
+          </section>
+        );
+      })}
+      <footer className="lesson-competency">
+        <strong>MATATAG Grade 9 competency</strong>
+        {lesson.competencies.map((competency) => <p key={competency.code}>{competency.code}: "{competency.text}"</p>)}
+      </footer>
+    </article>
+  );
 }
+
+function ModuleIcon({ moduleId }: { moduleId: string }) {
+  const groupId = fallbackModules.find(item => item.id === moduleId)?.groupId || moduleId;
+  const Icon = moduleIcons[groupId] || Activity;
+  return <span className={`module-icon subject-${groupId}`} aria-hidden="true"><Icon size={24} strokeWidth={2.2} /></span>;
+}
+
+// Workspace remounts on login (keyed by token), which drops any toast set just before it.
+// A message shown at login is parked here and shown by the new Workspace instead.
+let carriedToast = "";
 
 function App() {
   const token = useSyncExternalStore(subscribeSession, getToken);
@@ -65,6 +109,14 @@ function App() {
 function Workspace({ user }: { user: AuthUser | null }) {
   const recordSession = useRef<ReturnType<typeof createRecordSession> | null>(null);
   const pendingSaves = useRef(new Set<string>());
+  const headerRef = useRef<HTMLElement | null>(null);
+  // Module ids already seen as complete/graded, so the celebration only plays for a
+  // transition that happens live this session - never replayed for progress that was
+  // already there when records/feedback first loaded (resets on login/logout).
+  const seenCompleteRef = useRef(new Set<string>());
+  const completeHydratedRef = useRef(false);
+  const seenGradedRef = useRef(new Set<string>());
+  const gradedHydratedRef = useRef(false);
   const role: Role | "" = user?.role ?? "";
   const isTeacherPreview = role === "teacher";
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
@@ -85,6 +137,12 @@ function Workspace({ user }: { user: AuthUser | null }) {
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<Section | null>(null);
   const [showAddStudent, setShowAddStudent] = useState(false);
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [bulkNames, setBulkNames] = useState("");
+  const [bulkProgress, setBulkProgress] = useState("");
+  // Generated logins waiting to be printed. Memory only: passwords are hashed server-side and
+  // must never be written to storage on a shared classroom device.
+  const [slips, setSlips] = useState<{ name: string; section: string; username: string; password: string }[]>([]);
   const [sectionStudents, setSectionStudents] = useState<AuthUser[]>([]);
   const [sectionRecords, setSectionRecords] = useState<ClassProgressRecord[]>([]);
   const [sectionFeedback, setSectionFeedback] = useState<Feedback[]>([]);
@@ -95,6 +153,11 @@ function Workspace({ user }: { user: AuthUser | null }) {
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackFormError, setFeedbackFormError] = useState("");
   const [myFeedback, setMyFeedback] = useState<Feedback[]>([]);
+  // Module ids currently playing the "capture confirmed" completion celebration, and
+  // ids whose "Graded" badge should flash gold - both transient, cleared a moment after
+  // they start. See the effects below for how "just happened this session" is tracked.
+  const [justCompleted, setJustCompleted] = useState<Set<string>>(new Set());
+  const [justGraded, setJustGraded] = useState<Set<string>>(new Set());
   const [newSectionName, setNewSectionName] = useState("");
   const [sectionFormError, setSectionFormError] = useState("");
   const [screen, setScreen] = useState<Screen>("home");
@@ -175,6 +238,20 @@ function Workspace({ user }: { user: AuthUser | null }) {
     fetchModules().then(items => { if (items.length === fallbackModules.length && items.every(item => item.groupId && fallbackModules.some(local => local.id === item.id))) setModules(items); }).catch(() => undefined);
   }, []);
 
+  // The sticky AR camera preview (see .ar-frame-sticky) docks just below the header, but the
+  // header's own height isn't constant - the title wraps to two lines on some screens - so a
+  // fixed CSS offset would either leave a gap or let the header cover the camera. Measure it
+  // for real and keep it current on resize/orientation change/title changes instead of guessing.
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const update = () => document.documentElement.style.setProperty("--header-h", `${header.offsetHeight}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [screen]);
+
   useEffect(() => {
     if (!user) return;
     const token = getToken();
@@ -190,6 +267,58 @@ function Workspace({ user }: { user: AuthUser | null }) {
     session.load().catch(() => showToast("Could not load saved work. Check browser storage."));
     return () => { session.stop(); recordSession.current = null; };
   }, [user?.id]);
+
+  // A fresh login (or logout) starts a new "session" for celebration purposes, so
+  // switching accounts never inherits stale completion/grade history as something new.
+  useEffect(() => {
+    seenCompleteRef.current = new Set();
+    completeHydratedRef.current = false;
+    seenGradedRef.current = new Set();
+    gradedHydratedRef.current = false;
+  }, [user?.id]);
+
+  // Plays the "capture confirmed" completion celebration the moment a module crosses
+  // into "all three stages done" - but only for a transition that happens live, never
+  // for progress that was already complete the first time records loaded this session.
+  useEffect(() => {
+    const completeIds = new Set(moduleProgress.filter((item) => item.completed === REQUIRED_STAGES.length).map((item) => item.module.id));
+    if (!completeHydratedRef.current) {
+      seenCompleteRef.current = completeIds;
+      completeHydratedRef.current = true;
+      return;
+    }
+    const newlyCompleted = [...completeIds].filter((id) => !seenCompleteRef.current.has(id));
+    if (!newlyCompleted.length) return;
+    seenCompleteRef.current = new Set([...seenCompleteRef.current, ...newlyCompleted]);
+    setJustCompleted((current) => new Set([...current, ...newlyCompleted]));
+    // One independent timer per id, not tied to this effect's own cleanup - a save or
+    // sync completing right after (another setRecords call, re-running this effect)
+    // must not cancel the clear-out for an id that already started celebrating.
+    newlyCompleted.forEach((id) => {
+      setTimeout(() => {
+        setJustCompleted((current) => { if (!current.has(id)) return current; const next = new Set(current); next.delete(id); return next; });
+      }, 1400);
+    });
+  }, [records]);
+
+  // Same idea for a grade just arriving - flashes the "Graded" badge gold once.
+  useEffect(() => {
+    const gradedIds = new Set(myFeedback.map((entry) => entry.moduleId));
+    if (!gradedHydratedRef.current) {
+      seenGradedRef.current = gradedIds;
+      gradedHydratedRef.current = true;
+      return;
+    }
+    const newlyGraded = [...gradedIds].filter((id) => !seenGradedRef.current.has(id));
+    if (!newlyGraded.length) return;
+    seenGradedRef.current = new Set([...seenGradedRef.current, ...newlyGraded]);
+    setJustGraded((current) => new Set([...current, ...newlyGraded]));
+    newlyGraded.forEach((id) => {
+      setTimeout(() => {
+        setJustGraded((current) => { if (!current.has(id)) return current; const next = new Set(current); next.delete(id); return next; });
+      }, 900);
+    });
+  }, [myFeedback]);
 
   // Keep resets and feedback live on every activity screen. Pulls and
   // uploads share a queue; saving locally never waits for the network.
@@ -252,12 +381,16 @@ function Workspace({ user }: { user: AuthUser | null }) {
     if (!online || !(screen === "home" && role === "teacher")) return;
 
     let cancelled = false;
+    const userId = user?.id ?? "";
+    const cached = readCache<Awaited<ReturnType<typeof fetchClassProgress>>>(userId, "class-progress");
+    if (cached) { setStudents(cached.students); setClassRecords(cached.records); }
     const load = () => {
       fetchClassProgress()
         .then((result) => {
           if (cancelled) return;
           setStudents(result.students);
           setClassRecords(result.records);
+          writeCache(userId, "class-progress", result);
         })
         .catch(() => undefined);
     };
@@ -265,13 +398,35 @@ function Workspace({ user }: { user: AuthUser | null }) {
     load();
     const interval = window.setInterval(load, LIVE_REFRESH_MS);
     return () => { cancelled = true; window.clearInterval(interval); };
-  }, [online, screen, role]);
+  }, [online, screen, role, user?.id]);
+
+  // Keep the saved class list in step with local changes (a new section, new students),
+  // not only with server loads, so returning to Classes never shows an older list.
+  const sectionsLoaded = useRef(false);
+  useEffect(() => {
+    if (sectionsLoaded.current && user) writeCache(user.id, "sections", sections);
+  }, [sections, user]);
 
   useEffect(() => {
-    if (screen === "classes" && role === "teacher") {
-      listSections().then((result) => setSections(result.sections)).catch(() => undefined);
-    }
-  }, [screen, role]);
+    if (!(screen === "classes" && role === "teacher")) return;
+    let cancelled = false;
+    const userId = user?.id ?? "";
+    const cached = readCache<SectionSummary[]>(userId, "sections");
+    if (cached) { sectionsLoaded.current = true; setSections(cached); }
+    listSections()
+      .then(async (result) => {
+        if (cancelled) return;
+        sectionsLoaded.current = true;
+        setSections(result.sections);
+        // Preload each section so opening one is instant. One at a time to go easy on the server.
+        for (const section of result.sections) {
+          if (cancelled) return;
+          await getSection(section.id).then((data) => writeCache(userId, `section:${section.id}`, data)).catch(() => undefined);
+        }
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [screen, role, user?.id]);
 
   useEffect(() => {
     if (!online || !(screen === "section" && activeSectionId)) return;
@@ -285,6 +440,7 @@ function Workspace({ user }: { user: AuthUser | null }) {
           setSectionStudents(result.students);
           setSectionRecords(result.records);
           setSectionFeedback(result.feedback);
+          writeCache(user?.id ?? "", `section:${activeSectionId}`, result);
         })
         .catch(() => undefined);
     };
@@ -292,7 +448,7 @@ function Workspace({ user }: { user: AuthUser | null }) {
     load();
     const interval = window.setInterval(load, LIVE_REFRESH_MS);
     return () => { cancelled = true; window.clearInterval(interval); };
-  }, [online, screen, activeSectionId]);
+  }, [online, screen, activeSectionId, user?.id]);
 
   useEffect(() => {
     document.body.classList.toggle("login-open", !role);
@@ -336,6 +492,12 @@ function Workspace({ user }: { user: AuthUser | null }) {
     window.setTimeout(() => setToast(""), 2600);
   }
 
+  useEffect(() => {
+    if (!user || !carriedToast) return;
+    showToast(carriedToast);
+    carriedToast = "";
+  }, []);
+
   function goTo(nextScreen: Screen, push = true) {
     if (nextScreen === "modules" && push) { setSelectedQuarter(null); setSelectedGroup(null); setQuery(""); }
     if (push && screen !== nextScreen) setHistory((current) => [...current, screen]);
@@ -357,9 +519,9 @@ function Workspace({ user }: { user: AuthUser | null }) {
     setAuthLoading(true);
     try {
       const result = await apiLogin(loginUsername.trim(), loginPassword);
+      carriedToast = result.user.role === "teacher" ? "Teacher Mode opened." : "Student Mode opened.";
       setSession(result.token, result.user);
       setLoginPassword("");
-      showToast(result.user.role === "teacher" ? "Teacher Mode opened." : "Student Mode opened.");
     } catch (error) {
       setAuthError(error instanceof ApiError ? error.message : "Login failed. Check your connection.");
     } finally {
@@ -373,9 +535,9 @@ function Workspace({ user }: { user: AuthUser | null }) {
     setAuthLoading(true);
     try {
       const result = await registerTeacher(signupUsername.trim(), signupPassword, signupName.trim());
+      carriedToast = "Teacher account created.";
       setSession(result.token, result.user);
       setSignupPassword("");
-      showToast("Teacher account created.");
     } catch (error) {
       setAuthError(error instanceof ApiError ? error.message : "Sign up failed. Check your connection.");
     } finally {
@@ -401,11 +563,13 @@ function Workspace({ user }: { user: AuthUser | null }) {
   }
 
   function openSection(sectionId: string) {
+    // Show the last loaded copy right away; the section effect refreshes it from the server.
+    const cached = readCache<Awaited<ReturnType<typeof getSection>>>(user?.id ?? "", `section:${sectionId}`);
     setActiveSectionId(sectionId);
-    setActiveSection(null);
-    setSectionStudents([]);
-    setSectionRecords([]);
-    setSectionFeedback([]);
+    setActiveSection(cached?.section ?? null);
+    setSectionStudents(cached?.students ?? []);
+    setSectionRecords(cached?.records ?? []);
+    setSectionFeedback(cached?.feedback ?? []);
     setExpandedStudentId(null);
     setShowAddStudent(false);
     goTo("section");
@@ -498,7 +662,99 @@ function Workspace({ user }: { user: AuthUser | null }) {
     }
   }
 
-  function logout() {
+  async function handleBulkAdd(event: FormEvent) {
+    event.preventDefault();
+    if (!activeSectionId || bulkProgress) return;
+    const names = parseClassList(bulkNames);
+    if (!names.length) {
+      setStudentFormError("Paste at least one name.");
+      return;
+    }
+    setStudentFormError("");
+    const sectionName = activeSection?.name ?? "";
+    const created: typeof slips = [];
+    const failed: string[] = [];
+    for (const [index, name] of names.entries()) {
+      setBulkProgress(`Creating ${index + 1} of ${names.length}...`);
+      const password = makePassword();
+      let user: AuthUser | null = null;
+      // A 409 means the random username suffix collided; retry with a fresh one.
+      for (let attempt = 0; attempt < 3 && !user; attempt += 1) {
+        try {
+          user = (await createSectionStudent(activeSectionId, makeUsername(name), password, name)).user;
+        } catch (error) {
+          if (!(error instanceof ApiError && error.status === 409)) break;
+        }
+      }
+      if (user) {
+        const createdUser = user;
+        created.push({ name, section: sectionName, username: createdUser.username, password });
+        setSectionStudents((current) => [createdUser, ...current]);
+      } else {
+        failed.push(name);
+      }
+    }
+    setBulkProgress("");
+    setSlips((current) => [...current, ...created]);
+    setSections((current) => current.map((section) => (section.id === activeSectionId ? { ...section, studentCount: section.studentCount + created.length } : section)));
+    // Leave only the failures in the box so the teacher can retry them.
+    setBulkNames(failed.join("\n"));
+    if (failed.length) setStudentFormError(`${failed.length} could not be created (still in the box). Check your connection and try again.`);
+    showToast(`${created.length} student account${created.length === 1 ? "" : "s"} created. Print the login slips.`);
+  }
+
+  async function handleNewPassword(student: AuthUser) {
+    if (!activeSectionId) return;
+    if (!window.confirm(`Give ${student.name} a new password? Their old password will stop working.`)) return;
+    const password = makePassword();
+    try {
+      await apiSetStudentPassword(activeSectionId, student.id, password);
+      setSlips((current) => [...current.filter((slip) => slip.username !== student.username), { name: student.name, section: activeSection?.name ?? "", username: student.username, password }]);
+      showToast(`New password for ${student.username}: ${password}`);
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : "Could not set a new password.");
+    }
+  }
+
+  // One row per student and module they started, for the teacher's records or a spreadsheet.
+  function downloadSectionCsv() {
+    // A leading = + - @ would make Excel run a student's answer as a formula; the ' keeps it as text.
+    const cell = (value: unknown) => `"${String(value ?? "").replace(/^[=+\-@\t\r]/, "'$&").replace(/"/g, '""')}"`;
+    const stageText = (list: ClassProgressRecord[], stage: Stage) => list.filter((record) => record.stage === stage).map((record) => record.text).join(" | ");
+    const rows: unknown[][] = [["Student", "Username", "Module", "Mode", "Predict", "Observe", "Explain", "Reflection", "Score", "Teacher comment", "Last submitted"]];
+    for (const student of sectionStudents) {
+      for (const module of modules) {
+        const list = sectionRecords.filter((record) => record.userId === student.id && record.moduleId === module.id);
+        const grade = sectionFeedback.find((entry) => entry.studentId === student.id && entry.moduleId === module.id);
+        if (!list.length && !grade) continue;
+        const last = list.map((record) => record.createdAt).sort().pop();
+        rows.push([student.name, student.username, `${module.quarter}: ${module.title}`, [...new Set(list.map((record) => record.mode))].join("/"),
+          stageText(list, "Predict"), stageText(list, "Observe"), stageText(list, "Explain"), stageText(list, "Reflection"),
+          grade?.score ?? "", grade?.comment ?? "", last ? new Date(last).toLocaleString() : ""]);
+      }
+    }
+    // The BOM makes Excel read names with ñ correctly.
+    const blob = new Blob(["﻿" + rows.map((row) => row.map(cell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `tuklas-${(activeSection?.name || "section").replace(/[^\w-]+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function printSlips() {
+    document.body.classList.add("printing-slips");
+    window.addEventListener("afterprint", () => document.body.classList.remove("printing-slips"), { once: true });
+    window.print();
+  }
+
+  async function logout() {
+    // Try to send waiting answers first so the warning only shows when they really can't go.
+    const latest = navigator.onLine ? await syncUnsyncedRecords(records) : records;
+    const unsynced = latest.filter((record) => !record.syncedAt).length;
+    if (unsynced && !window.confirm(`${unsynced} answer${unsynced === 1 ? " has" : "s have"} not been sent to your teacher yet. ${navigator.onLine ? "Tap Cancel and wait a moment, or log out anyway; it will be sent next time you log in on this device." : "They stay saved on this device, but you need internet to log back in."} Log out anyway?`)) return;
+    clearCache();
     clearSession();
     setScreen("home");
     setHistory([]);
@@ -604,6 +860,8 @@ function Workspace({ user }: { user: AuthUser | null }) {
     return (
       <main className="landing-screen" aria-labelledby="landingTitle">
         <section className="landing-hero">
+          <span className="scan-corner tl" aria-hidden="true" /><span className="scan-corner tr" aria-hidden="true" /><span className="scan-corner bl" aria-hidden="true" /><span className="scan-corner br" aria-hidden="true" />
+          <span className="hero-scan-icon" aria-hidden="true"><ScanLine size={18} strokeWidth={2.2} /></span>
           <p className="eyebrow">Grade 9 WebAR Science Learning</p>
           <h1 id="landingTitle">Tuklas AR Science Lab</h1>
           <p>Predict, observe, and explain science concepts using camera-based classroom activities and offline-ready learning records.</p>
@@ -636,7 +894,17 @@ function Workspace({ user }: { user: AuthUser | null }) {
           )}
         </section>
         <section className="landing-flow" aria-label="Learning flow">
-          {["Predict", "Observe", "Explain"].map((step) => <article key={step}><strong>{step}</strong></article>)}
+          {[
+            ["Predict", "Guess what will happen"],
+            ["Observe", "Watch it play out in AR"],
+            ["Explain", "Say why it happened"],
+          ].map(([step, hint], index) => (
+            <article key={step}>
+              <span className="landing-flow-step">{index + 1}</span>
+              <strong>{step}</strong>
+              <small>{hint}</small>
+            </article>
+          ))}
         </section>
         <section className="landing-marker">
           <div>
@@ -644,8 +912,9 @@ function Workspace({ user }: { user: AuthUser | null }) {
             <h2>One printed marker per group</h2>
             <p>Students use the same marker across lessons during camera observation.</p>
           </div>
-          <a className="marker-preview" href="/assets/tuklas-marker.png" target="_blank" rel="noreferrer" aria-label="Open printable Tuklas AR marker"><span>TUKLAS</span></a>
+          <a className="marker-preview" href="/assets/tuklas-flask.png" target="_blank" rel="noreferrer" aria-label="Open printable Tuklas AR marker"><img src="/assets/tuklas-flask.png" alt="" /></a>
         </section>
+        <AppInfo />
       </main>
     );
   }
@@ -654,24 +923,33 @@ function Workspace({ user }: { user: AuthUser | null }) {
     <section className="progress-category" aria-labelledby={`progress-${heading.toLowerCase().replace(/\s+/g, "-")}`}>
       <div className="row-between progress-category-heading"><h3 id={`progress-${heading.toLowerCase().replace(/\s+/g, "-")}`}>{heading}</h3><span>{items.length}</span></div>
       {items.length ? <div className="module-progress-list">
-        {items.map(({ module, completed, percent: modulePercent, stages, grade }) => (
-          <button type="button" className="module-progress-row" key={module.id} onClick={() => openModuleProgress(module, stages)}>
-            <ModuleIcon moduleId={module.id} />
-            <div>
-              <div className="row-between"><strong>{module.quarter}: {module.title}</strong><span>{modulePercent}%</span></div>
-              <div className="progress-track"><span style={{ width: `${modulePercent}%` }} /></div>
-              <div className="row-between"><small>{completed} of {REQUIRED_STAGES.length} stages</small>{grade && <small className="graded-badge">Graded{grade.score != null ? ` · ${grade.score}/100` : ""}</small>}</div>
-            </div>
-          </button>
-        ))}
+        {items.map(({ module, completed, percent: modulePercent, stages, grade }) => {
+          const capturing = justCompleted.has(module.id);
+          return (
+            <button type="button" className={`module-progress-row${capturing ? " row-capture-lock" : ""}`} key={module.id} onClick={() => openModuleProgress(module, stages)}>
+              {capturing && <>
+                <span className="row-lock-corner tl" aria-hidden="true" />
+                <span className="row-lock-corner tr" aria-hidden="true" />
+                <span className="row-lock-corner bl" aria-hidden="true" />
+                <span className="row-lock-corner br" aria-hidden="true" />
+              </>}
+              <ModuleIcon moduleId={module.id} />
+              <div>
+                <div className="row-between"><strong>{module.quarter}: {module.title}</strong><span>{modulePercent}%</span></div>
+                <div className="progress-track"><span style={{ width: `${modulePercent}%` }} /></div>
+                <div className="row-between"><small>{completed} of {REQUIRED_STAGES.length} stages</small>{grade && <small className={`graded-badge${justGraded.has(module.id) ? " graded-badge-new" : ""}`}>Graded{grade.score != null ? ` · ${grade.score}/100` : ""}</small>}</div>
+              </div>
+            </button>
+          );
+        })}
       </div> : <p className="muted progress-empty">{empty}</p>}
     </section>
   );
 
   return (
     <div className={`${role}-mode`}>
-      <header className="app-header">
-        <button className={`back-button ${(history.length > 0 || selectedQuarter !== null) && screen !== "home" ? "visible" : ""}`} onClick={goBack} aria-label="Go back">&lt;</button>
+      <header className="app-header" ref={headerRef}>
+        <button className={`back-button ${(history.length > 0 || selectedQuarter !== null) && screen !== "home" ? "visible" : ""}`} onClick={goBack} aria-label="Go back"><ChevronLeft size={20} strokeWidth={2.6} /></button>
         <div>
           <p className="eyebrow">{titles[screen][0]}</p>
           <h1>{titles[screen][1]}</h1>
@@ -686,11 +964,12 @@ function Workspace({ user }: { user: AuthUser | null }) {
       <main className="screen-stack">
         {screen === "home" && (
           <section className="screen active">
+            <GettingStarted userId={user.id} role={isTeacherPreview ? "teacher" : "student"} />
             {isTeacherPreview ? (
               <>
                 <article className="panel-card overall-progress">
                   <div className="row-between">
-                    <div><p className="eyebrow">My Class</p><h2>Class Progress</h2></div>
+                    <h2>Class Progress</h2>
                     <strong className="overall-percent">{students.length}</strong>
                   </div>
                   <p>{students.length} student account{students.length === 1 ? "" : "s"} - {classRecords.length} submission{classRecords.length === 1 ? "" : "s"} synced</p>
@@ -748,12 +1027,12 @@ function Workspace({ user }: { user: AuthUser | null }) {
             )}
             <article className="panel-card marker-access">
               <div className="marker-access-copy">
-                <div><p className="eyebrow">AR Marker</p><h2>Printable and downloadable marker</h2><p>Open the marker for printing or download a copy for offline classroom use.</p></div>
-                <a className="marker-preview" href="/assets/tuklas-marker.png" target="_blank" rel="noreferrer" aria-label="Open printable Tuklas AR marker"><span>TUKLAS</span></a>
+                <div><h2>Printable and downloadable marker</h2><p>Open the marker for printing or download a copy for offline classroom use.</p></div>
+                <a className="marker-preview" href="/assets/tuklas-flask.png" target="_blank" rel="noreferrer" aria-label="Open printable Tuklas AR marker"><img src="/assets/tuklas-flask.png" alt="" /></a>
               </div>
               <div className="marker-actions">
-                <a className="primary-button" href="/assets/tuklas-marker.png" target="_blank" rel="noreferrer"><Printer size={18} />Open to Print</a>
-                <a className="secondary-button" href="/assets/tuklas-marker.png" download="tuklas-ar-marker.png"><Download size={18} />Download Marker</a>
+                <a className="primary-button" href="/assets/tuklas-flask.png" target="_blank" rel="noreferrer"><Printer size={18} />Open to Print</a>
+                <a className="secondary-button" href="/assets/tuklas-flask.png" download="tuklas-ar-marker.png"><Download size={18} />Download Marker</a>
               </div>
             </article>
           </section>
@@ -762,9 +1041,9 @@ function Workspace({ user }: { user: AuthUser | null }) {
         {screen === "modules" && (
           <section className="screen active">
             <nav className="curriculum-breadcrumb" aria-label="Curriculum navigation">
-              <button onClick={() => { setSelectedQuarter(null); setSelectedGroup(null); }}>Quarters</button>
-              {selectedQuarter !== null && <><span> / </span><button onClick={() => setSelectedGroup(null)}>Quarter {selectedQuarter}</button></>}
-              {selectedGroup && <><span> / </span><span>{modules.find(m => m.groupId === selectedGroup)?.moduleTitle}</span></>}
+              <button className={selectedQuarter === null ? "current" : ""} onClick={() => { setSelectedQuarter(null); setSelectedGroup(null); }}>Quarters</button>
+              {selectedQuarter !== null && <><ChevronRight size={14} strokeWidth={2.4} aria-hidden="true" /><button className={!selectedGroup ? "current" : ""} onClick={() => setSelectedGroup(null)}>Quarter {selectedQuarter}</button></>}
+              {selectedGroup && <><ChevronRight size={14} strokeWidth={2.4} aria-hidden="true" /><span className="current">{modules.find(m => m.groupId === selectedGroup)?.moduleTitle}</span></>}
             </nav>
             <label className="search-box"><span>Search experiments</span><input type="search" placeholder="Search topics or experiments..." value={query} onChange={event => setQuery(event.target.value)} /></label>
             <h2>{selectedGroup ? "Experiments" : selectedQuarter ? "Modules" : "Quarters"}</h2>
@@ -772,13 +1051,14 @@ function Workspace({ user }: { user: AuthUser | null }) {
               {!selectedQuarter && [1, 2, 3, 4].map(quarter => {
                 const items = visibleModules.filter(item => item.quarterNumber === quarter);
                 if (!items.length) return null;
-                return <button className="module-card" key={quarter} onClick={() => setSelectedQuarter(quarter)}><span className="module-icon">Q{quarter}</span><span><strong>{items[0].quarter}</strong><small>{new Set(items.map(i => i.groupId)).size} module(s), {items.length} experiments</small></span><span aria-hidden="true">&gt;</span></button>;
+                const moduleCount = new Set(items.map(i => i.groupId)).size;
+                return <button className="module-card" key={quarter} onClick={() => setSelectedQuarter(quarter)}><span className="module-icon">Q{quarter}</span><span><strong>{items[0].quarter}</strong><small>{moduleCount} module{moduleCount === 1 ? "" : "s"}, {items.length} experiment{items.length === 1 ? "" : "s"}</small></span><span className="row-chevron" aria-hidden="true"><ChevronRight size={20} strokeWidth={2.4} /></span></button>;
               })}
               {selectedQuarter && !selectedGroup && [...new Set(visibleModules.filter(item => item.quarterNumber === selectedQuarter).map(item => item.groupId))].map(group => {
                 const items = visibleModules.filter(item => item.groupId === group);
-                return <button className="module-card" key={group} onClick={() => setSelectedGroup(group)}><ModuleIcon moduleId={group} /><span><strong>{items[0].moduleNumber}. {items[0].moduleTitle}</strong><small>{items.length} POE experiments</small></span><span aria-hidden="true">&gt;</span></button>;
+                return <button className="module-card" key={group} onClick={() => setSelectedGroup(group)}><ModuleIcon moduleId={group} /><span><strong>{items[0].moduleNumber}. {items[0].moduleTitle}</strong><small>{items.length} POE experiments</small></span><span className="row-chevron" aria-hidden="true"><ChevronRight size={20} strokeWidth={2.4} /></span></button>;
               })}
-              {selectedGroup && visibleModules.filter(item => item.groupId === selectedGroup).map(item => <button className="module-card" key={item.id} onClick={() => { setActiveModule(item); goTo("detail"); }}><ModuleIcon moduleId={item.id} /><span><strong>{item.title}</strong><small>{item.subtitle}</small><small>{stagesFor(records, item.id).size ? `${REQUIRED_STAGES.filter(stage => stagesFor(records, item.id).has(stage)).length}/3 POE stages complete` : "Ready to explore"}</small></span><span aria-hidden="true">&gt;</span></button>)}
+              {selectedGroup && visibleModules.filter(item => item.groupId === selectedGroup).map(item => <button className="module-card" key={item.id} onClick={() => { setActiveModule(item); goTo("detail"); }}><ModuleIcon moduleId={item.id} /><span><strong>{item.title}</strong><small>{item.subtitle}</small><small>{stagesFor(records, item.id).size ? `${REQUIRED_STAGES.filter(stage => stagesFor(records, item.id).has(stage)).length}/3 POE stages complete` : "Ready to explore"}</small></span><span className="row-chevron" aria-hidden="true"><ChevronRight size={20} strokeWidth={2.4} /></span></button>)}
               {!visibleModules.some(item => (!selectedQuarter || item.quarterNumber === selectedQuarter) && (!selectedGroup || item.groupId === selectedGroup)) && <p>No matching experiments. Try another search.</p>}
             </div>
           </section>
@@ -786,7 +1066,7 @@ function Workspace({ user }: { user: AuthUser | null }) {
 
         {screen === "detail" && (
           <section className="screen active">
-            {isTeacherPreview && <p className="teacher-preview-note">Teacher Preview - explore this lesson before assigning it. Nothing here is saved as student work.</p>}
+            {isTeacherPreview && <p className="teacher-preview-note"><Eye size={16} strokeWidth={2.4} aria-hidden="true" /><span>Teacher Preview - explore this lesson before assigning it. Nothing here is saved as student work.</span></p>}
             <article className="panel-card">
               <div className="module-summary">
                 <ModuleIcon moduleId={activeModule.id} />
@@ -847,24 +1127,27 @@ function Workspace({ user }: { user: AuthUser | null }) {
         )}
 
         {screen === "observe" && (
-          <section className="screen active">
-            {isTeacherPreview && <p className="teacher-preview-note">Teacher Preview - trials run normally but aren't saved as student work.</p>}
+          <section className="screen active observe-screen">
+            {isTeacherPreview && <p className="teacher-preview-note"><Eye size={16} strokeWidth={2.4} aria-hidden="true" /><span>Teacher Preview - trials run normally but aren't saved as student work.</span></p>}
             <article className="ar-panel">
               <div className="row-between">
                 <div><p className="eyebrow">{viewMode === "ar" ? "Camera Mode" : "3D Model Mode"}</p><h2>{viewMode === "ar" ? "Start the camera and observe the trial" : "Use the model when camera access is unavailable"}</h2></div>
                 <button className="text-button compact-button" onClick={() => setViewMode(viewMode === "ar" ? "fallback" : "ar")}>{viewMode === "ar" ? "Use 3D Model" : "Use Camera"}</button>
               </div>
+            </article>
+            {/* A sibling of .ar-panel, not nested inside it: position: sticky only stays pinned
+                while scrolling through its own parent's height, and .ar-panel (just the heading
+                row) is too short to span the long Observation Prompt card below. As a direct
+                child of .screen, its containing block is this whole route's content instead. */}
+            <div className="ar-frame-sticky">
               <div className={`ar-frame ${viewMode === "fallback" ? "fallback-mode" : ""}`}>
+                <span className="scan-corner tl" aria-hidden="true" /><span className="scan-corner tr" aria-hidden="true" /><span className="scan-corner bl" aria-hidden="true" /><span className="scan-corner br" aria-hidden="true" />
                 <Suspense fallback={null}>
-                  <ScienceScene moduleId={activeModule.id} controlA={controlA} controlB={controlB} lab={lab} trialPulse={trialPulse} viewMode={viewMode} onArReady={setCameraReady} onArStatus={setCameraStatus} onMarkerChange={setMarkerDetected} />
+                  <ScienceScene moduleId={activeModule.id} controlA={controlA} controlB={controlB} lab={lab} trialPulse={trialPulse} viewMode={viewMode} onArReady={setCameraReady} onArStatus={setCameraStatus} onMarkerChange={setMarkerDetected} onControlChange={(which, value) => (which === "a" ? setControlA(value) : setControlB(value))} onLabChange={patch => setLab(current => ({ ...current, ...patch }))} />
                 </Suspense>
               </div>
-              {viewMode === "ar" && (
-                <>
-                  <p className="camera-status">{cameraStatus}</p>
-                </>
-              )}
-            </article>
+              {viewMode === "ar" && <p className="camera-status">{cameraStatus}</p>}
+            </div>
             <article className="panel-card">
               <p className="eyebrow">Observation Prompt</p>
               <p>{activeModule.observe}</p>
@@ -905,7 +1188,7 @@ function Workspace({ user }: { user: AuthUser | null }) {
 
         {screen === "explain" && (
           <section className="screen active">
-            {isTeacherPreview && <p className="teacher-preview-note">Teacher Preview - your write-up here isn't saved as student work.</p>}
+            {isTeacherPreview && <p className="teacher-preview-note"><Eye size={16} strokeWidth={2.4} aria-hidden="true" /><span>Teacher Preview - your write-up here isn't saved as student work.</span></p>}
             {explainLocked ? (
               <article className="panel-card locked-notice">
                 <p className="eyebrow">Explanation Submitted</p>
@@ -940,7 +1223,7 @@ function Workspace({ user }: { user: AuthUser | null }) {
             ) : (
               <article className="result-card"><div className="score-ring"><strong>{Math.max(25, percent)}%</strong><span>Complete</span></div><h2>Great work!</h2><p>Prediction, Observation, and Explanation completed.</p></article>
             )}
-            <article className="panel-card look-back"><p className="eyebrow">Look Back</p><h2>{activeModule.title}</h2><p>{activeModule.overview}</p></article>
+            <LessonCard module={activeModule} />
             {activeModuleFeedback && (
               <article className="panel-card feedback-card">
                 <div className="row-between"><p className="eyebrow">Teacher Feedback</p>{activeModuleFeedback.score != null && <strong className="overall-percent">{activeModuleFeedback.score}/100</strong>}</div>
@@ -968,15 +1251,16 @@ function Workspace({ user }: { user: AuthUser | null }) {
         {screen === "settings" && (
           <section className="screen active">
             {!installed && installPrompt && (
-              <button className="settings-row" onClick={installApp}><span><strong>Install App</strong><small>Add Tuklas to your home screen, like a regular app.</small></span><span aria-hidden="true">&gt;</span></button>
+              <button className="settings-row" onClick={installApp}><span><strong>Install App</strong><small>Add Tuklas to your home screen, like a regular app.</small></span><span className="row-chevron" aria-hidden="true"><ChevronRight size={20} strokeWidth={2.4} /></span></button>
             )}
             {installed && (
               <article className="panel-card"><p className="eyebrow">Installed</p><p>Tuklas is installed on this device.</p></article>
             )}
-            <button className="settings-row" onClick={prepareOffline}><span><strong>Prepare for Offline Use</strong><small>{offlineStatus}</small></span><span aria-hidden="true">&gt;</span></button>
-            <button className="settings-row" onClick={handleSync}><span><strong>Sync Saved Work</strong><small>{records.filter((record) => !record.syncedAt).length} records waiting to sync.</small></span><span aria-hidden="true">&gt;</span></button>
-            <button className="settings-row" onClick={checkDevice}><span><strong>Device Check</strong><small>{deviceStatus}</small></span><span aria-hidden="true">&gt;</span></button>
+            <button className="settings-row" onClick={prepareOffline}><span><strong>Prepare for Offline Use</strong><small>{offlineStatus}</small></span><span className="row-chevron" aria-hidden="true"><ChevronRight size={20} strokeWidth={2.4} /></span></button>
+            <button className="settings-row" onClick={handleSync}><span><strong>Sync Saved Work</strong><small>{records.filter((record) => !record.syncedAt).length} records waiting to sync.</small></span><span className="row-chevron" aria-hidden="true"><ChevronRight size={20} strokeWidth={2.4} /></span></button>
+            <button className="settings-row" onClick={checkDevice}><span><strong>Device Check</strong><small>{deviceStatus}</small></span><span className="row-chevron" aria-hidden="true"><ChevronRight size={20} strokeWidth={2.4} /></span></button>
             <article className="panel-card offline-checklist"><p className="eyebrow">Offline Setup</p><ol><li>Open this HTTPS app while connected.</li><li>Tap Prepare for Offline Use.</li><li>Add the app to the home screen.</li><li>Reopen in airplane mode and run one trial.</li></ol></article>
+            <AppInfo />
             {!isTeacherPreview && (
               <article className="panel-card teacher-tools">
                 <div className="row-between"><h2>Saved Work</h2><button className="text-button compact-button" onClick={async () => {
@@ -990,9 +1274,45 @@ function Workspace({ user }: { user: AuthUser | null }) {
                   showToast("Local cache cleared.");
                 }}>Clear Cache</button></div>
                 <p className="muted">Clears this device's cache only. Already-submitted work stays locked until your teacher resets it.</p>
-                <div className="records-list">
-                  {records.length ? records.slice().reverse().map((record) => <article className="record-card" key={record.id}><small>{record.role} / {record.module} / {record.stage} / {new Date(record.createdAt).toLocaleString()} {record.syncedAt ? "/ synced" : "/ offline"}</small><p>{record.text}</p></article>) : <p className="muted">No saved progress on this device yet.</p>}
-                </div>
+                {records.length ? (() => {
+                  // One collapsed one-line row per module (curriculum order), all inside a single
+                  // collapsed summary, so a student with every module done still sees one line.
+                  const order = (id: string) => { const index = modules.findIndex((module) => module.id === id); return index < 0 ? modules.length : index; };
+                  const moduleIds = [...new Set(records.map((record) => record.moduleId))].sort((a, b) => order(a) - order(b));
+                  const completedCount = moduleIds.filter((moduleId) => REQUIRED_STAGES.every((stage) => stagesFor(records, moduleId).has(stage))).length;
+                  const unsyncedTotal = records.filter((record) => !record.syncedAt).length;
+                  return (
+                  <details className="saved-all">
+                    <summary className="row-between">
+                      <span><strong>{moduleIds.length} module{moduleIds.length === 1 ? "" : "s"}</strong> · {completedCount} completed{unsyncedTotal ? ` · ${unsyncedTotal} not synced` : ""}</span>
+                      <span className="disclosure-chevron" aria-hidden="true"><ChevronRight size={18} strokeWidth={2.4} /></span>
+                    </summary>
+                    <div className="records-list">
+                    {moduleIds.map((moduleId) => {
+                      const moduleRecords = records.filter((record) => record.moduleId === moduleId);
+                      const stages = stagesFor(moduleRecords, moduleId);
+                      const done = REQUIRED_STAGES.filter((stage) => stages.has(stage)).length;
+                      const unsynced = moduleRecords.filter((record) => !record.syncedAt).length;
+                      return (
+                        <details className="record-card saved-module" key={moduleId}>
+                          <summary className="row-between">
+                            <span className="saved-title">{modules.find((module) => module.id === moduleId)?.title ?? moduleRecords[0].module}</span>
+                            <span className={`saved-status ${done === REQUIRED_STAGES.length ? "saved-complete" : ""}`}>{done === REQUIRED_STAGES.length ? "Completed" : `${done}/${REQUIRED_STAGES.length}`}{unsynced ? " · not synced" : ""}</span>
+                            <span className="disclosure-chevron" aria-hidden="true"><ChevronRight size={16} strokeWidth={2.4} /></span>
+                          </summary>
+                          {moduleRecords.map((record) => (
+                            <div className="saved-entry" key={record.id}>
+                              <small>{record.stage} / {new Date(record.createdAt).toLocaleString()} / {record.syncedAt ? "synced" : "offline"}</small>
+                              <p>{record.text}</p>
+                            </div>
+                          ))}
+                        </details>
+                      );
+                    })}
+                    </div>
+                  </details>
+                  );
+                })() : <p className="muted">No saved progress on this device yet.</p>}
                 <button className="secondary-button" onClick={() => {
                   const blob = new Blob([JSON.stringify(records, null, 2)], { type: "application/json" });
                   const url = URL.createObjectURL(blob);
@@ -1023,7 +1343,7 @@ function Workspace({ user }: { user: AuthUser | null }) {
                   <span className="student-avatar" aria-hidden="true">{section.name.trim().slice(0, 2).toUpperCase() || "SC"}</span>
                   <span><strong>{section.name}</strong><small>{section.studentCount} student{section.studentCount === 1 ? "" : "s"}</small></span>
                   <small aria-hidden="true" />
-                  <span aria-hidden="true">&gt;</span>
+                  <span className="row-chevron" aria-hidden="true"><ChevronRight size={20} strokeWidth={2.4} /></span>
                 </button>
               )) : <p className="muted">No sections yet. Create one above.</p>}
             </div>
@@ -1036,11 +1356,12 @@ function Workspace({ user }: { user: AuthUser | null }) {
               <p className="eyebrow">Section</p>
               <h2>{activeSection?.name || "Loading..."}</h2>
               <p>{sectionStudents.length} student{sectionStudents.length === 1 ? "" : "s"} enrolled</p>
+              {sectionRecords.length > 0 && <button type="button" className="secondary-button" onClick={downloadSectionCsv}><Download size={18} />Download Results (CSV)</button>}
             </article>
             <article className="panel-card">
               <button type="button" className="row-between disclosure-toggle" onClick={() => setShowAddStudent((current) => !current)} aria-expanded={showAddStudent}>
                 <span className="eyebrow">Add Student</span>
-                <span className={`disclosure-chevron ${showAddStudent ? "open" : ""}`} aria-hidden="true">&gt;</span>
+                <span className={`disclosure-chevron ${showAddStudent ? "open" : ""}`} aria-hidden="true"><ChevronRight size={18} strokeWidth={2.4} /></span>
               </button>
               {showAddStudent && (
                 <form className="auth-form compact-form" onSubmit={handleCreateSectionStudent}>
@@ -1052,6 +1373,48 @@ function Workspace({ user }: { user: AuthUser | null }) {
                 </form>
               )}
             </article>
+            <article className="panel-card">
+              <button type="button" className="row-between disclosure-toggle" onClick={() => setShowBulkAdd((current) => !current)} aria-expanded={showBulkAdd}>
+                <span className="eyebrow">Add Whole Class</span>
+                <span className={`disclosure-chevron ${showBulkAdd ? "open" : ""}`} aria-hidden="true"><ChevronRight size={18} strokeWidth={2.4} /></span>
+              </button>
+              {showBulkAdd && (
+                <form className="auth-form compact-form" onSubmit={handleBulkAdd}>
+                  <label className="field-label">Class list, one name per line
+                    <textarea rows={8} placeholder={"Juan Dela Cruz\nSANTOS, MARIA L."} value={bulkNames} onChange={(event) => setBulkNames(event.target.value)} disabled={Boolean(bulkProgress)} />
+                  </label>
+                  <p className="muted">Usernames and passwords are made for you. Copying the names from the class list (SF1) works.</p>
+                  {studentFormError && <p className="auth-error" role="alert">{studentFormError}</p>}
+                  <button className="secondary-button" type="submit" disabled={Boolean(bulkProgress)}>{bulkProgress || `Create ${parseClassList(bulkNames).length || ""} Accounts`}</button>
+                </form>
+              )}
+            </article>
+            {slips.length > 0 && (
+              <article className="panel-card">
+                <p className="eyebrow">Login Slips</p>
+                <h2>{slips.length} login{slips.length === 1 ? "" : "s"} ready to print</h2>
+                <p>Print and cut these now, or send each one from your own phone by SMS or email (the app does not store any number or address). Passwords are not saved and cannot be shown again; if a slip gets lost, use New Password on that student.</p>
+                <div className="records-list">
+                  {slips.map((slip) => {
+                    const message = encodeURIComponent(`Tuklas AR login for ${slip.name}: username ${slip.username}, password ${slip.password}. Open ${window.location.host} to log in. Keep this private.`);
+                    return (
+                      <div className="row-between slip-row" key={slip.username}>
+                        <span><small>{slip.username}</small><p>{slip.name}</p></span>
+                        <span className="slip-share">
+                          {/* "sms:?&body=" is the form both Android and iOS Messages accept. */}
+                          <a className="secondary-button compact-button" href={`sms:?&body=${message}`}><MessageSquare size={16} />SMS</a>
+                          <a className="secondary-button compact-button" href={`mailto:?subject=${encodeURIComponent("Tuklas AR login")}&body=${message}`}><Mail size={16} />Email</a>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="row-between">
+                  <button type="button" className="primary-button" onClick={printSlips}><Printer size={18} />Print Slips</button>
+                  <button type="button" className="text-button" onClick={() => { if (window.confirm("Clear the slips? Unprinted passwords will be lost.")) setSlips([]); }}>Clear</button>
+                </div>
+              </article>
+            )}
             <article className="panel-card">
               <p className="eyebrow">Enrolled Students</p>
               <div className="records-list">
@@ -1067,7 +1430,7 @@ function Workspace({ user }: { user: AuthUser | null }) {
                         aria-expanded={isExpanded}
                       >
                         <span><small>{student.username}</small><p>{student.name}</p></span>
-                        <span className={`disclosure-chevron ${isExpanded ? "open" : ""}`} aria-hidden="true">&gt;</span>
+                        <span className={`disclosure-chevron ${isExpanded ? "open" : ""}`} aria-hidden="true"><ChevronRight size={18} strokeWidth={2.4} /></span>
                       </button>
                       {isExpanded && (
                         <div className="student-progress-panel">
@@ -1091,6 +1454,7 @@ function Workspace({ user }: { user: AuthUser | null }) {
                           {studentRecords.length > 0 && (
                             <button type="button" className="secondary-button" onClick={() => handleResetProgress(student.id)}>Reset All Progress</button>
                           )}
+                          <button type="button" className="secondary-button" onClick={() => handleNewPassword(student)}><KeyRound size={16} />New Password</button>
                         </div>
                       )}
                     </article>
@@ -1143,15 +1507,31 @@ function Workspace({ user }: { user: AuthUser | null }) {
             screen === item ||
             (item === "modules" && previewFlowScreens.includes(screen)) ||
             ((screen === "section" || screen === "grade") && item === "classes");
+          const NavIcon = ({ home: Home, modules: BookOpen, classes: Users, settings: Settings } as Partial<Record<Screen, LucideIcon>>)[item]!;
           return (
             <button key={item} className={isActive ? "active" : ""} onClick={() => goTo(item)}>
-              {item === "modules" ? "Modules" : item === "classes" ? "Classes" : item[0].toUpperCase() + item.slice(1)}
+              <NavIcon size={22} strokeWidth={isActive ? 2.4 : 2} aria-hidden="true" />
+              <span>{item === "modules" ? "Modules" : item === "classes" ? "Classes" : item[0].toUpperCase() + item.slice(1)}</span>
             </button>
           );
         })}
       </nav>
 
       <div className={`toast ${toast ? "show" : ""}`} role="status" aria-live="polite">{toast}</div>
+      {slips.length > 0 && createPortal(
+        <div className="slip-sheet">
+          {slips.map((slip) => (
+            <div className="slip" key={slip.username}>
+              <small>Tuklas AR Science Lab{slip.section ? ` - ${slip.section}` : ""}</small>
+              <strong>{slip.name}</strong>
+              <span>Username: <b>{slip.username}</b></span>
+              <span>Password: <b>{slip.password}</b></span>
+              <small>Open {window.location.host} and log in. Keep this slip private.</small>
+            </div>
+          ))}
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

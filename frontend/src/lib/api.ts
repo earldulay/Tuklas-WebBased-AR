@@ -94,6 +94,13 @@ export function createSectionStudent(sectionId: string, username: string, passwo
   });
 }
 
+export function setStudentPassword(sectionId: string, studentId: string, password: string) {
+  return request<{ ok: true }>(`/sections/${sectionId}/students/${studentId}/password`, {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+}
+
 export function resetStudentProgress(studentId: string, moduleId?: string) {
   return request<{ deleted: number }>(`/auth/students/${studentId}/reset-progress`, {
     method: "POST",
@@ -105,5 +112,12 @@ export function submitFeedback(sectionId: string, studentId: string, moduleId: s
   return request<{ feedback: Feedback }>(`/sections/${sectionId}/students/${studentId}/modules/${moduleId}/feedback`, {
     method: "POST",
     body: JSON.stringify({ score, comment }),
+  });
+}
+
+export function changeMyPassword(currentPassword: string, newPassword: string) {
+  return request<{ ok: true }>("/auth/password", {
+    method: "POST",
+    body: JSON.stringify({ currentPassword, newPassword }),
   });
 }

@@ -1,8 +1,10 @@
-import { useEffect, useRef } from "react";
+import { BUILD } from "./AppInfo";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { ViewMode } from "../types/domain";
-import { createExperimentScene } from "./experimentScene";
-import type { LabState } from "../lib/experiments";
+import { createExperimentScene, type InteractionApi } from "./experimentScene";
+import { controls, type LabState } from "../lib/experiments";
 import { loadArToolkit } from "../lib/arjs";
 
 interface ScienceSceneProps {
@@ -15,15 +17,26 @@ interface ScienceSceneProps {
   viewMode: ViewMode;
   onArReady?: (ready: boolean) => void;
   onArStatus?: (status: string) => void;
+  /** Called when the student changes a variable by touching the model instead of using the slider. */
+  onControlChange?: (which: "a" | "b", value: number) => void;
+  /** Called when the student changes lab state (electrons placed, layers added...) by touching the model. */
+  onLabChange?: (patch: Partial<LabState>) => void;
 }
 
 const cameraParametersUrl = "/assets/camera_para.dat";
-const tuklasMarkerUrl = "/assets/tuklas-marker.patt";
+// Both printed markers work: the original Hiro marker and the Tuklas flask marker (2026-10-14).
+const markerUrls = ["/assets/tuklas-marker.patt", "/assets/tuklas-flask.patt"];
 
-export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, viewMode, onArReady, onArStatus, onMarkerChange }: ScienceSceneProps) {
+export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, viewMode, onArReady, onArStatus, onMarkerChange, onControlChange, onLabChange }: ScienceSceneProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  // Set once a weak phone has stepped down to the tracking-size level, so the camera is set up again at the smaller size.
+  const [trackingLow, setTrackingLow] = useState(false);
   const valuesRef = useRef({ controlA, controlB, lab, trialPulse });
   valuesRef.current = { controlA, controlB, lab, trialPulse };
+  const controlChangeRef = useRef(onControlChange);
+  controlChangeRef.current = onControlChange;
+  const labChangeRef = useRef(onLabChange);
+  labChangeRef.current = onLabChange;
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -34,12 +47,25 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
     if (viewMode === "fallback") { camera.position.set(0, 1.4, 9); camera.lookAt(0, 0.2, 0); }
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
     mount.appendChild(renderer.domElement);
+
+    // A generated studio environment gives metal and glass something to reflect. No image asset needed.
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const room = new RoomEnvironment();
+    const environment = pmrem.fromScene(room, 0.04).texture;
+    room.dispose();
+    scene.environment = environment;
+    scene.environmentIntensity = 0.85;
 
     const trackedRoot = new THREE.Group();
     scene.add(trackedRoot);
+    // One root per marker; AR.js writes each marker's pose to its own root.
+    const markerRoots = [trackedRoot, ...markerUrls.slice(1).map(() => new THREE.Group())];
+    markerRoots.slice(1).forEach(root => scene.add(root));
 
     const presentationRoot = new THREE.Group();
     if (viewMode === "ar") {
@@ -56,15 +82,63 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
     modelRoot.position.y = viewMode === "ar" ? 0.55 : 0;
     presentationRoot.add(modelRoot);
 
-    const light = new THREE.HemisphereLight(0xffffff, 0x24324d, 2.5);
-    scene.add(light);
-    scene.add(new THREE.AmbientLight(0xffffff, 1.4));
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x24324d, 1.1));
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
+    scene.add(ambientLight);
+    const keyLight = new THREE.DirectionalLight(0xfff4e0, 2.4);
+    keyLight.position.set(3, 5, 4);
+    scene.add(keyLight);
 
     const billboardRoot = new THREE.Group();
     modelRoot.add(billboardRoot);
     const contentRoot = new THREE.Group();
     billboardRoot.add(contentRoot);
     const updateExperiment = createExperimentScene(contentRoot, moduleId);
+
+    // Diagnostics: ?empty=1 hides the model (measures AR tracking alone); ?detect=2 analyzes the camera every 2nd frame.
+    const urlParams = new URLSearchParams(window.location.search);
+    const emptyScene = urlParams.has("empty");
+    const detectFromUrl = Math.max(1, Number(urlParams.get("detect")) || 1);
+    let detectEvery = detectFromUrl;
+    let arFrame = 0;
+    if (emptyScene) modelRoot.visible = false;
+
+    // Quality levels, cheapest-to-hide first: 0 full, 1 analyze the camera every 2nd frame (the AR tracking is the main cost
+    // on weak phones), 2 also lower resolution, 3 also simple shading. Steps down by itself on a struggling phone.
+    const forcedQuality = new URLSearchParams(window.location.search).get("q");
+    let quality = 0;
+    let qFrames = 0;
+    let qStart = performance.now();
+    let qWindows = 0;
+    let lowWindows = 0;
+    const applyQuality = (level: number) => {
+      if (level === quality) return;
+      quality = level;
+      detectEvery = Math.max(detectFromUrl, level >= 1 ? 2 : 1);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, level >= 2 ? 1 : 1.5));
+      if (level >= 3) { scene.environment = null; ambientLight.intensity = 0.95; updateExperiment.setLite(); }
+    };
+    let storedQuality = 0;
+    try { storedQuality = Number(localStorage.getItem("tuklas-quality-v2")) || 0; } catch { /* storage unavailable */ }
+    applyQuality(Math.min(3, forcedQuality !== null ? Number(forcedQuality) || 0 : storedQuality));
+    // Marker tracking is the main cost on weak phones: analyze a quarter as many pixels from quality level 2.
+    const trackingSize = quality >= 2 || trackingLow ? { w: 320, h: 240 } : { w: 640, h: 480 };
+    const watchFrameRate = (now: number) => {
+      qFrames += 1;
+      const elapsed = now - qStart;
+      if (elapsed < 1000) return;
+      const fps = qFrames * 1000 / elapsed;
+      qFrames = 0; qStart = now;
+      if (elapsed > 2500) return; // tab was hidden; not a real reading
+      qWindows += 1;
+      if (forcedQuality !== null || quality >= 3 || qWindows <= 3) return;
+      lowWindows = fps < 19 ? lowWindows + 1 : 0;
+      if (lowWindows < 3) return;
+      lowWindows = 0; qWindows = 0;
+      applyQuality(quality + 1);
+      try { localStorage.setItem("tuklas-quality-v2", String(quality)); } catch { /* storage unavailable */ }
+      if (quality >= 2 && viewMode === "ar") setTrackingLow(true);
+    };
     let elapsed = 0;
     let previousTime = performance.now();
     let previousInputs = "";
@@ -77,38 +151,174 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
     let hasStablePose = false;
     let missedFrames = 0;
 
+    // Touch and mouse manipulation for scenes that expose grabbable parts (see Interaction in experimentScene).
+    const interact = updateExperiment.interact;
+    mount.style.pointerEvents = interact ? "auto" : "";
+    mount.style.touchAction = interact ? "pan-y" : "";
+    const inputCleanup: (() => void)[] = [];
+    if (interact) {
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+      const plane = new THREE.Plane();
+      const planeNormal = new THREE.Vector3();
+      const planeOrigin = new THREE.Vector3();
+      const hitPoint = new THREE.Vector3();
+      const api: InteractionApi = {
+        values: () => { const current = valuesRef.current; return { a: current.controlA, b: current.controlB, lab: current.lab }; },
+        setControl: (which, value) => controlChangeRef.current?.(which, value),
+        setLab: patch => labChangeRef.current?.(patch),
+        restart: () => { elapsed = 0; },
+      };
+      let grab = "";
+      let start = { x: 0, y: 0 };
+      let moved = 0;
+      const aim = (event: PointerEvent) => {
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+        camera.updateMatrixWorld(); scene.updateMatrixWorld(true);
+        raycaster.setFromCamera(pointer, camera);
+      };
+      // Where the finger is on the experiment's own table plane, in the scene's local units.
+      const tablePoint = () => {
+        planeNormal.set(0, 0, 1).transformDirection(contentRoot.matrixWorld);
+        planeOrigin.setFromMatrixPosition(contentRoot.matrixWorld);
+        plane.setFromNormalAndCoplanarPoint(planeNormal, planeOrigin);
+        return raycaster.ray.intersectPlane(plane, hitPoint) ? contentRoot.worldToLocal(hitPoint.clone()) : null;
+      };
+      const shown = (object: THREE.Object3D) => { for (let node: THREE.Object3D | null = object; node; node = node.parent) if (!node.visible) return false; return true; };
+      const nameOf = (object: THREE.Object3D) => {
+        for (const [name, target] of Object.entries(interact.targets)) for (let node: THREE.Object3D | null = object; node; node = node.parent) if (node === target) return shown(target) ? name : "";
+        return "";
+      };
+      // On a phone a battery cell or lever can project to under 10 CSS px, so a tap that misses every
+      // part still grabs the nearest one whose screen footprint, grown to MIN_TOUCH px, contains it.
+      // Targets already bigger than that keep their exact shape.
+      const MIN_TOUCH = 44;
+      const box = new THREE.Box3();
+      const corner = new THREE.Vector3();
+      const nearestSmall = (event: PointerEvent) => {
+        const rect = renderer.domElement.getBoundingClientRect();
+        let best = "", bestDistance = Infinity;
+        for (const [name, target] of Object.entries(interact.targets)) {
+          if (!shown(target) || box.setFromObject(target).isEmpty()) continue;
+          let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+          for (let i = 0; i < 8; i++) {
+            corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camera);
+            const x = rect.left + (corner.x + 1) / 2 * rect.width, y = rect.top + (1 - corner.y) / 2 * rect.height;
+            x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+          }
+          if (x1 - x0 >= MIN_TOUCH && y1 - y0 >= MIN_TOUCH) continue;
+          const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+          const halfW = Math.max(x1 - x0, MIN_TOUCH) / 2, halfH = Math.max(y1 - y0, MIN_TOUCH) / 2;
+          if (Math.abs(event.clientX - cx) > halfW || Math.abs(event.clientY - cy) > halfH) continue;
+          const distance = Math.hypot(event.clientX - cx, event.clientY - cy);
+          if (distance < bestDistance) { best = name; bestDistance = distance; }
+        }
+        return best;
+      };
+      const finish = (event: PointerEvent) => { grab = ""; if (mount.hasPointerCapture(event.pointerId)) mount.releasePointerCapture(event.pointerId); };
+      const onDown = (event: PointerEvent) => {
+        if (viewMode === "ar" && !presentationRoot.visible) return;
+        aim(event);
+        const name = raycaster.intersectObjects(Object.values(interact.targets), true).map(hit => nameOf(hit.object)).find(Boolean) || nearestSmall(event);
+        if (!name) return;
+        grab = name; start = { x: event.clientX, y: event.clientY }; moved = 0;
+        mount.setPointerCapture(event.pointerId);
+        const point = tablePoint();
+        if (point) interact.down?.(name, point, api);
+      };
+      const onMove = (event: PointerEvent) => {
+        if (!grab) return;
+        moved = Math.max(moved, Math.hypot(event.clientX - start.x, event.clientY - start.y));
+        aim(event);
+        const point = tablePoint();
+        if (point) interact.move?.(grab, point, moved, api);
+      };
+      const onUp = (event: PointerEvent) => {
+        if (!grab) return;
+        aim(event);
+        const point = tablePoint();
+        if (point) interact.up?.(grab, point, moved, api); else interact.cancel?.();
+        finish(event);
+      };
+      const onCancel = (event: PointerEvent) => { if (!grab) return; interact.cancel?.(); finish(event); };
+      // Once a part is grabbed, stop the browser from turning the drag into a page scroll.
+      const blockScroll = (event: TouchEvent) => { if (grab) event.preventDefault(); };
+      mount.addEventListener("touchmove", blockScroll, { passive: false });
+      mount.addEventListener("pointerdown", onDown);
+      mount.addEventListener("pointermove", onMove);
+      mount.addEventListener("pointerup", onUp);
+      mount.addEventListener("pointercancel", onCancel);
+      inputCleanup.push(() => {
+        mount.removeEventListener("pointerdown", onDown); mount.removeEventListener("pointermove", onMove);
+        mount.removeEventListener("pointerup", onUp); mount.removeEventListener("pointercancel", onCancel); mount.removeEventListener("touchmove", blockScroll);
+      });
+    }
+
+    const fpsEnabled = new URLSearchParams(window.location.search).has("fps");
+    let fpsHud: HTMLDivElement | null = null;
+    let fpsText: HTMLDivElement | null = null;
+    let statsAt = performance.now();
+    let frames = 0;
+    let renderFps = 0;
+
+    const tickFps = (now: number) => {
+      frames += 1;
+      if (now - statsAt >= 1000) {
+        renderFps = Math.round(frames * 1000 / (now - statsAt));
+        frames = 0; statsAt = now;
+        if (fpsText) fpsText.textContent = `render ${renderFps} fps | q${quality} d${detectEvery} t${trackingSize.w}${emptyScene ? " empty" : ""} | ${BUILD}`;
+      }
+    };
+
+    function startFpsHud() {
+      fpsHud = document.createElement("div");
+      fpsHud.style.cssText = "position:absolute;inset:0;z-index:5;pointer-events:none;";
+      fpsText = document.createElement("div");
+      fpsText.style.cssText = "position:absolute;left:8px;top:8px;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,.65);color:#fff;font:12px/1.3 monospace;";
+      fpsHud.append(fpsText);
+      mount!.appendChild(fpsHud);
+    }
+
+    if (fpsEnabled && viewMode === "fallback") startFpsHud();
+
     const render = () => {
       const now = performance.now();
+      watchFrameRate(now);
+      if (fpsEnabled) tickFps(now);
       const current = valuesRef.current;
       const inputs = JSON.stringify(current);
       if (inputs !== previousInputs) { elapsed = 0; previousInputs = inputs; }
       if (viewMode === "fallback" || markerVisible) elapsed += Math.min(0.05, (now - previousTime) / 1000);
       previousTime = now;
-      updateExperiment(elapsed, current.controlA, current.controlB, current.lab);
+      if (!emptyScene) updateExperiment(elapsed, current.controlA, current.controlB, current.lab);
       if (viewMode === "ar" && arSource?.ready && arContext) {
-        arContext.update(arSource.domElement);
-        if (trackedRoot.visible) {
+        arFrame += 1;
+        const analyzed = arFrame % detectEvery === 0;
+        if (analyzed) arContext.update(arSource.domElement);
+        const tracked = markerRoots.find(root => root.visible);
+        if (tracked) {
           missedFrames = 0;
           presentationRoot.visible = true;
           if (!hasStablePose) {
-            presentationRoot.position.copy(trackedRoot.position);
-            presentationRoot.quaternion.copy(trackedRoot.quaternion);
-            presentationRoot.scale.copy(trackedRoot.scale);
+            presentationRoot.position.copy(tracked.position);
+            presentationRoot.quaternion.copy(tracked.quaternion);
+            presentationRoot.scale.copy(tracked.scale);
             hasStablePose = true;
           } else {
-            presentationRoot.position.lerp(trackedRoot.position, 0.32);
-            presentationRoot.quaternion.slerp(trackedRoot.quaternion, 0.28);
-            presentationRoot.scale.lerp(trackedRoot.scale, 0.32);
+            presentationRoot.position.lerp(tracked.position, 0.32);
+            presentationRoot.quaternion.slerp(tracked.quaternion, 0.28);
+            presentationRoot.scale.lerp(tracked.scale, 0.32);
           }
-        } else if (hasStablePose) {
+        } else if (hasStablePose && analyzed) {
           missedFrames += 1;
           if (missedFrames > 6) {
             presentationRoot.visible = false;
             hasStablePose = false;
           }
         }
-        if (trackedRoot.visible !== markerVisible) {
-          markerVisible = trackedRoot.visible;
+        if (Boolean(tracked) !== markerVisible) {
+          markerVisible = Boolean(tracked);
           onMarkerChange?.(markerVisible);
           onArStatus?.(markerVisible ? "Tuklas marker detected." : "Looking for the Tuklas marker...");
         }
@@ -121,6 +331,34 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
       animationId = requestAnimationFrame(render);
     };
 
+    // 3D mode: measure what this experiment actually shows and frame it, instead of one fixed distance for all.
+    const sceneBounds = new THREE.Box3();
+    if (viewMode === "fallback") {
+      const expand = (object: THREE.Object3D) => {
+        if (!object.visible) return;
+        const item = object as THREE.Mesh;
+        if (item.geometry && (item.material as THREE.Material | undefined)?.opacity !== 0) {
+          if (!item.geometry.boundingBox) item.geometry.computeBoundingBox();
+          sceneBounds.union(item.geometry.boundingBox!.clone().applyMatrix4(object.matrixWorld));
+        }
+        object.children.forEach(expand);
+      };
+      const start = valuesRef.current;
+      // Sample a few moments so moving parts (cart, bubbles, waves) stay inside the frame.
+      // Include both ends of the first control (for example globe vs surface detail) so switching views stays in frame.
+      const range = controls[moduleId as keyof typeof controls][0];
+      new Set([start.controlA, range.min, range.max]).forEach(a => [0, 0.7, 1.4, 2.1].forEach(time => { updateExperiment(time, a, start.controlB, start.lab); scene.updateMatrixWorld(true); expand(contentRoot); }));
+    }
+    const frameScene = () => {
+      if (sceneBounds.isEmpty()) return;
+      const size = sceneBounds.getSize(new THREE.Vector3());
+      const center = sceneBounds.getCenter(new THREE.Vector3());
+      const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+      const distance = Math.max(size.y / 2 / tanHalf, size.x / 2 / (tanHalf * camera.aspect)) * 1.12 + size.z * 0.15;
+      camera.position.set(center.x, center.y + distance * 0.12, center.z + distance);
+      camera.lookAt(center);
+    };
+
     const resize = () => {
       renderer.setSize(mount.clientWidth, mount.clientHeight);
       if (viewMode === "ar" && arSource && arContext) {
@@ -128,8 +366,7 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
         camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
       } else if (viewMode === "fallback") {
         camera.aspect = mount.clientWidth / Math.max(1, mount.clientHeight);
-        camera.position.z = Math.max(9, 3.2 / (Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect));
-        camera.lookAt(0, 0.2, 0);
+        frameScene();
         camera.updateProjectionMatrix();
       }
     };
@@ -139,7 +376,7 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
     resizeObserver.observe(mount);
 
     if (viewMode === "ar") {
-      trackedRoot.visible = false;
+      markerRoots.forEach(root => { root.visible = false; });
       onArReady?.(false);
       onMarkerChange?.(false);
       onArStatus?.("Loading AR marker tracking...");
@@ -160,8 +397,8 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
             cameraParametersUrl,
             detectionMode: "mono",
             patternRatio: 0.5,
-            canvasWidth: 640,
-            canvasHeight: 480,
+            canvasWidth: trackingSize.w,
+            canvasHeight: trackingSize.h,
           });
           arSource = source;
           arContext = context;
@@ -177,6 +414,7 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
               void video.play().catch(() => {
                 if (!cancelled) onArStatus?.("Camera playback paused. Switch to 3D and reopen the camera.");
               });
+              if (fpsEnabled) startFpsHud();
               context.init(() => {
                 if (cancelled) { context.dispose?.(); return; }
                 const controller = context.arController!;
@@ -185,10 +423,14 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
                 // Disposing earlier nulls patternMarkers under the pending callback.
                 let finishMarkerSetup!: () => void;
                 markerSetup = new Promise(resolve => { finishMarkerSetup = resolve; });
+                let pending = markerUrls.length;
+                let failed = false;
                 const loadMarker = controller.loadMarker.bind(controller);
                 controller.loadMarker = url => loadMarker(url).catch(() => -1).then(id => {
-                  if (!cancelled) {
-                    if (id < 0) {
+                  if (id < 0) failed = true;
+                  pending -= 1;
+                  if (!cancelled && pending === 0) {
+                    if (failed) {
                       onArReady?.(false);
                       onArStatus?.("Marker file failed to load. Prepare offline files again or use 3D mode.");
                     } else {
@@ -197,15 +439,15 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
                     }
                   }
                   // Let AR.js's promise continuation register this ID before disposal.
-                  window.setTimeout(finishMarkerSetup, 0);
+                  if (pending === 0) window.setTimeout(finishMarkerSetup, 0);
                   return id;
                 });
-                new THREEx.ArMarkerControls(context, trackedRoot, {
+                markerUrls.forEach((patternUrl, index) => new THREEx.ArMarkerControls(context, markerRoots[index], {
                   type: "pattern",
-                  patternUrl: tuklasMarkerUrl,
+                  patternUrl,
                   changeMatrixMode: "modelViewMatrix",
                   minConfidence: 0.7,
-                });
+                }));
 
                 camera.projectionMatrix.copy(context.getProjectionMatrix());
                 resize();
@@ -241,6 +483,8 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
       window.removeEventListener("resize", resize);
       resizeObserver.disconnect();
       onMarkerChange?.(false);
+      inputCleanup.forEach(remove => remove());
+      fpsHud?.remove();
       stopCamera();
       if (arContext?.arController) {
         const context = arContext;
@@ -250,16 +494,19 @@ export function ScienceScene({ moduleId, controlA, controlB, lab, trialPulse, vi
       const geometries = new Set<THREE.BufferGeometry>();
       const materials = new Set<THREE.Material>();
       scene.traverse(object => {
+        if ((object as THREE.InstancedMesh).isInstancedMesh) (object as THREE.InstancedMesh).dispose();
         const renderable = object as THREE.Mesh;
         if (renderable.geometry) geometries.add(renderable.geometry);
         if (renderable.material) (Array.isArray(renderable.material) ? renderable.material : [renderable.material]).forEach(mat => materials.add(mat));
       });
       geometries.forEach(geometry => geometry.dispose());
       materials.forEach(mat => { const map = (mat as THREE.MeshBasicMaterial).map; map?.dispose(); mat.dispose(); });
+      environment.dispose();
+      pmrem.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [moduleId, viewMode, onArReady, onArStatus, onMarkerChange]);
+  }, [moduleId, viewMode, trackingLow, onArReady, onArStatus, onMarkerChange]);
 
   return <div className="three-scene" ref={mountRef} aria-hidden="true" />;
 }
